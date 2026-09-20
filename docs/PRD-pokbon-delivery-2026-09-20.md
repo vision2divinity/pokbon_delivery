@@ -2,7 +2,8 @@
 
 **2026-09-20 · draft 2, revised the same day after the owner's answers · supersedes the 2026-09-13 draft**
 Rewritten from Francis's brief of 2026-09-20, then revised again once he corrected the money model.
-Section 0a records what is now settled; every section it touches was rewritten, not appended to.
+Section 0a records what is settled. **§ 2 now carries the owner's cashless COD design of 2026-09-20,
+which replaces both options the earlier revision offered.** Every section it touches was rewritten.
 
 ---
 
@@ -46,6 +47,8 @@ Everything else below is new or substantially rewritten.
 | 6 | **Failed COD: goods return to the vendor.** Rider compensation deferred, to be settled before enrolment (§ 11) |
 | 7 | **Background location** accepted as solvable; a policy page will be produced (§ 14) |
 | 8 | **Data protection** to be worked through separately — but it gates NIA access, see § 4a |
+| 9 | **No physical cash anywhere, in any flow.** COD becomes pay-at-the-door by MoMo or card, triggered by the rider and approved by the buyer on their own phone (§ 2) |
+| 10 | **The rider must never see the code.** It goes to the buyer, who reads it out (§ 7) |
 
 Still open: § 17.
 
@@ -69,50 +72,70 @@ It serves two streams of demand:
 
 Both produce the same job object and the same rider experience. Only the origin and who can see it differ.
 
-## 2 · Why this is worth building — the cash-on-delivery argument
+## 2 · The cashless COD design — the reason to build this
 
-There are several reasons, but one is much stronger than the rest and should drive the roadmap.
+Cash on delivery breaks commission collection. A COD order is money that never touches POKBON: the vendor hands
+over goods, takes cash, and owes commission on a sale POKBON cannot see settle. Plugin 1.20 already treats this
+as the central problem — netting was made mandatory because, in the code's own words, a vendor sits on COD cash
+— but netting only recovers the debt later, from future payouts, if there are future payouts.
 
-**Cash on delivery breaks commission collection, and a POKBON rider fixes it structurally.**
+**The owner's design removes the cash instead of trying to control it.** This supersedes the visibility-versus-
+custody choice offered earlier in this document; it is strictly better than both.
 
-Today a COD order is money that never touches POKBON. The vendor hands goods to a buyer, takes cash, and owes
-commission on a sale POKBON cannot see settle. The 1.20 commission engine already treats this as the central
-problem — netting was made mandatory specifically because, in the code's own words, a vendor sits on COD cash —
-but netting is a mitigation. It recovers the debt later, from future payouts, if there are future payouts.
+### The flow at the door
 
-Delivery fixes this, but there are **two different strengths of fix**, and the model as described currently
-chooses the weaker one. Both are legitimate. The difference should be a decision rather than an accident.
+1. Rider arrives and marks arrived.
+2. Rider triggers the code. It is sent **to the buyer** by SMS, or by in-app notification for a POKBON order.
+3. The buyer reads the code aloud. The rider types it in. **The rider never sees it.**
+4. As the code is verified, the buyer gets a **payment prompt on their own phone** for the items, the delivery,
+   or the total.
+5. A callback confirms the buyer approved and paid. If they missed the prompt, the rider can trigger it again.
+6. Goods are handed over.
+7. POKBON settles: the vendor's share if the goods are not POKBON's, the rider's delivery fee, and POKBON keeps
+   its commission.
 
-**Visibility.** The rider confirms delivery, or the buyer confirms receipt, so POKBON knows the sale completed,
-which vendor owes, and how much. The claim becomes evidenced instead of disputed. The vendor still ends up
-holding the cash, so POKBON still chases — but now with proof.
+**No physical cash is handed over at any point, in any flow, including standalone courier jobs.**
 
-**Custody.** The rider remits the item cash to POKBON, which nets commission and pays the vendor the rest. The
-debt never forms. A vendor who never sells again cannot walk away owing, because the money was never theirs.
+### Why this is better than either earlier option
 
-Custody is much stronger and is the only version that removes the problem rather than documenting it. It is
-also the one vendors will resist, and it is impossible when a **vendor's own rider** delivers, because POKBON
-never touches that money.
+| | Vendor holds cash | Rider holds cash | **Cashless at the door** |
+|---|---|---|---|
+| Commission collection | chase the vendor | POKBON nets it | **POKBON nets it** |
+| Rider theft exposure | none | real, needs caps | **none** |
+| Reconciliation work | monthly argument | daily per rider | **none, it is a gateway ledger** |
+| Works with a vendor's own rider | n/a | no | **yes** |
 
-**Recommendation: support both, per job.**
+That last row is the one to notice. Earlier, a vendor's own rider meant POKBON never touched the money and fell
+back to merely having proof. **Under this design any rider using the POKBON Delivery app triggers POKBON's
+payment prompt, whoever employs them**, so POKBON receives the funds either way. Make that a rule: a rider on
+the platform uses the platform's payment flow, or they are not on the platform.
 
-| Who delivers | Cash custody | What POKBON gets |
-|---|---|---|
-| POKBON rider | POKBON holds item cash, nets commission, remits to vendor | The debt never forms |
-| Vendor's own rider | Vendor holds the cash | Proof of delivery, an evidenced claim |
+The owner's own framing is worth keeping: treat this as fixing **about 60 %** of the COD problem to begin with,
+and expect testing to reveal the rest.
 
-Store it on the job as `cashCustody: pokbon` or `vendor`. Settlement, reconciliation and what the vendor sees
-all follow from that one field. Without it the two cases blur and reconciliation becomes guesswork.
+### What this design costs, and it is not nothing
 
-Either way delivery makes the marketplace's weakest economics measurable, which is only possible if POKBON
-controls delivery.
+The cash risk is gone. It is replaced by **payment failure at the doorstep**, which is a better problem but a
+real one and must be designed, not discovered:
 
-The secondary reasons still stand: delivery cost becomes a measured number instead of an estimate, which the
-commission engine needs for true margin; "where is my order" calls stop; and the standalone service creates
-revenue independent of marketplace volume.
+- **The buyer has no funds, or the wallet fails, or the network is down.** The rider is standing there with the
+  goods. § 11 covers the fallback.
+- **Ordering matters.** Code first proves the right person; payment then completes the sale; **goods are handed
+  over only after the payment callback confirms**. A rider must never release goods on a pending prompt, and
+  the app should say `PAID — hand over the item` in a way that is unmistakable at arm's length in sunlight.
+- **Re-triggering must not double-charge.** One payment intent per job, one successful capture, idempotent on
+  retry. A buyer charged twice at their own front door will not order again.
+- **"Cash on delivery" that forbids cash will cause arguments on doorsteps** unless the wording changes
+  everywhere it appears. See § 12a — this is the single most likely cause of early friction and it is a copy
+  problem, not an engineering one.
+- **Gateway fees now apply to orders that previously had none.** This changes the marketplace's margin maths,
+  which currently assumes COD is fee-free. Already flagged to the marketplace side.
 
-**This also creates a new risk in the same move — riders holding cash.** See § 11, which is the price of § 2
-and must be designed at the same time, not later.
+### Secondary benefits, still true
+
+Delivery cost becomes a measured number rather than an estimate, which the commission engine needs for real
+margin. "Where is my order" calls stop. And the standalone service earns money independently of marketplace
+volume.
 
 ## 3 · The people
 
@@ -120,9 +143,9 @@ and must be designed at the same time, not later.
 |---|---|---|
 | **Buyer (POKBON order)** | Know where the parcel is, get the code, confirm receipt | POKBON Marketplace app; SMS if no app |
 | **Requester (standalone)** | Book a courier, price it, track it | POKBON Delivery app, requester mode |
-| **Rider** | Get offered nearby work, navigate, prove delivery, get paid, hand over cash | POKBON Delivery app, rider mode |
+| **Rider** | Get offered nearby work, navigate, prove delivery, get paid. **Never handles cash** | POKBON Delivery app, rider mode |
 | **Vendor** | Know a rider is coming and that the parcel left | Existing vendor screens in the marketplace app |
-| **Dispatcher / admin** | Approve riders, watch live jobs, intervene, reconcile cash | New WordPress admin plugin |
+| **Dispatcher / admin** | Approve riders, watch live jobs, intervene, chase failed payments | New WordPress admin plugin |
 
 Riders remain the constraint. **POKBON owns no vehicles**, so every rider is a small business deciding whether
 this app earns them more than the alternative. Pricing, payout speed and job density are product features, not
@@ -218,8 +241,8 @@ haulage has different insurance, different loading time and different failure mo
 - Jobs are offered to riders whose base area or current position is near the **pickup**, not the drop-off.
 - Offer to one rider at a time with a short timeout, then cascade to the next. Broadcast-to-all creates a race
   that punishes riders on slower connections and makes acceptance feel arbitrary.
-- A rider must be on duty, approved, within their vehicle class, and under their cash cap (§ 11) to be offered
-  work.
+- A rider must be on duty, approved and within their vehicle class to be offered work. There is no cash cap to
+  check, because riders never hold money (§ 2).
 - Dispatcher can assign manually and override anything. On day one, manual assignment is the whole system.
 
 **Multi-vendor orders: one job per vendor** (owner, 2026-09-20). The marketplace already supports orders
@@ -247,16 +270,27 @@ before optimising a behaviour nobody has measured yet.
 | 4 | `at_pickup` | Rider reaches the vendor | "Collecting your item" | — |
 | 5 | `picked_up` | Rider confirms collection | Map goes live | ✅ |
 | 6 | `en_route` | Rider moving to buyer | Live position + ETA | — |
-| 7 | `arrived` | Rider reaches the buyer | **Delivery code shown** | ✅ **with code** |
-| 8 | `delivered` | Code verified, cash collected if COD | "Delivered", receipt | ✅ |
-| 9 | `failed` | Nobody home, refused, unreachable | Reason and next step | ✅ |
-| 10 | `cancelled` | Buyer, vendor, ops, or timeout | Reason and refund state | ✅ |
+| 7 | `arrived` | Rider reaches the buyer | **Delivery code sent to the buyer** | ✅ **with code** |
+| 8 | `code_verified` | Buyer read the code, rider typed it | "Confirming it's you" | — |
+| 9 | `payment_pending` | Prompt sent to the buyer's phone | "Approve the payment" | ✅ |
+| 10 | `paid` | Gateway callback confirms | "Paid — collect your item" | — |
+| 11 | `delivered` | Rider hands over after `paid` | "Delivered", receipt | ✅ |
+| 12 | `payment_failed` | No funds, wallet down, prompt expired | What to do next | ✅ |
+| 13 | `failed` | Nobody home, refused, unreachable | Reason and next step | ✅ |
+| 14 | `cancelled` | Buyer, vendor, ops, or timeout | Reason and refund state | ✅ |
+
+Steps 8 to 11 apply only when payment is due at the door. A prepaid job goes straight from `arrived` and
+`code_verified` to `delivered`.
 
 Rules:
 
 - **Forward only.** Corrections are new events, never rewrites. Matches the marketplace's existing order guards.
-- **`delivered` is reachable only through code verification** (and cash collection on COD). A rider cannot
-  self-declare success. This is the integrity rule the whole product rests on.
+- **`delivered` is reachable only through code verification, and through `paid` when payment is due.** A rider
+  cannot self-declare success, and cannot hand over goods that have not been paid for. These two are the
+  integrity rules the whole product rests on.
+- **The rider never sees the code.** It is generated server-side, sent to the buyer, and compared server-side.
+  The rider's app submits an attempt and learns only whether it matched. Anything else — including showing it
+  to the rider "for support" — lets a rider complete deliveries without ever meeting the buyer.
 - **Six digits, not four.** AutoRescue uses four. Four digits with a few attempts is guessable by someone
   holding the parcel and wanting to mark it delivered. Single use, two-hour expiry, five attempts then locked.
 - **The code goes to the buyer by SMS only.** Never push — push can be read on a locked screen or mirrored to a
@@ -312,9 +346,10 @@ their earnings, and they compare notes with each other.
 The delivery fee is charged to the buyer and **passes to the rider**.
 
 - **Paid online.** POKBON already holds everything. Commission is netted at settlement and the rider is paid.
-- **Cash on delivery.** The rider collects **item price + delivery fee** as one amount, which then splits:
-  - the **delivery fee is the rider's**, kept immediately;
-  - the **item money** goes to POKBON (custody) or the vendor (visibility), per § 2.
+- **Pay on delivery (formerly COD).** The buyer approves a single digital payment at the door covering items
+  and delivery. **POKBON receives the whole amount**, then settles: the vendor's share if the goods are not
+  POKBON's, the rider's delivery fee, and POKBON's commission retained. One inbound payment, three outbound
+  splits, no cash and nothing to reconcile by hand.
 
 **Rider earnings are released on confirmed delivery**, so the delivery code is not only proof for the buyer, it
 is the trigger for the rider being paid. Keep that alignment: it makes the rider want the code entered properly.
@@ -324,9 +359,13 @@ the commission on the sale and the proof that the sale completed.
 
 ### 9c · Record on every job
 
-Quoted fee, routed distance, rider earning, platform service fee, gateway fee, cash collected, and
-`cashCustody`. Without all of these a profitable route cannot be told from a subsidised one, and COD cannot be
-reconciled at all.
+Quoted fee, routed distance, rider earning, platform service fee, gateway fee, and the payment reference.
+Without all of these a profitable route cannot be told from a subsidised one.
+
+**Gateway fees now apply to orders that used to carry none.** A pay-on-delivery order is a card or MoMo charge
+like any other, so Paystack takes its cut. The marketplace's commission engine currently assumes COD is
+fee-free and would overstate margin on every such order — already raised with the marketplace side and
+prepared for there.
 
 ### 9d · The risk in taking nothing from riders
 
@@ -339,9 +378,10 @@ say so at enrolment rather than introducing it in month six.
 
 ### 9e · Tips
 
-Cash is simplest, or added to the COD amount. Anything else is a second payment flow. **A tip must never be a
-condition of the code being accepted**, and the app must not nag — tipping pressure is the fastest way to make
-a delivery feel unpleasant.
+With no cash in the flow, a tip has to ride the same digital payment: offer it as an optional addition on the
+buyer's payment prompt, defaulting to nothing. **A tip must never be a condition of the code being accepted or
+the goods being handed over**, and the app must not nag — tipping pressure is the fastest way to make a
+delivery feel unpleasant.
 
 ## 10 · Payouts
 
@@ -351,30 +391,53 @@ including request, approval, reference capture and rejection-rollback; reuse tho
 **Decide employee versus contractor before launch.** It changes tax, insurance and how much control can be
 exerted over working hours, and it is painful to reverse once hundreds of riders are onboarded.
 
-## 11 · Cash handling
+## 11 · Payment at the door, and what happens when it fails
 
-Cash risk exists **only on COD marketplace orders where a POKBON rider takes custody** (§ 2). Standalone jobs
-are prepaid and carry none, which is another reason to ship those first.
+There is no cash handling, because there is no cash. Riders carry no float, there is nothing to remit, no cash
+caps, and no daily reconciliation. **The entire section that used to live here is deleted by the § 2 design**,
+and that is the strongest argument for it.
 
-- **Per-rider outstanding cash cap.** Above it no new COD jobs are offered; prepaid jobs keep flowing.
-- **The cap rises with tenure.** Week one carries far less than month six.
-- **Daily remittance**, with the outstanding balance always visible to the rider in the app.
-- **Declared-value cap per job**, so no single delivery loses more than the business can absorb.
-- **Reconciliation in the admin plugin**: collected, remitted, outstanding — per rider, per day.
-- **A written policy for loss** — deposit, guarantor or absorbed — decided before the first cedi is collected.
+What replaces it is a narrower, better-behaved problem: the payment can fail while the rider is standing at the
+door.
 
-**Note the asymmetry the split creates.** The rider keeps the delivery fee immediately but owes POKBON the item
-money, so a rider who absconds keeps both. The cash cap is the only thing bounding that loss, and it should be
-set against what the business can lose in a week rather than what feels generous to a good rider.
+### Failure paths, in the order to try them
 
-### Failed COD delivery
+1. **Re-trigger the prompt.** Most failures are a missed or expired prompt. The rider can send it again; it must
+   be the same payment intent so the buyer cannot be charged twice.
+2. **Let someone else pay.** Send a payment link by SMS so a spouse, a colleague or a parent can settle it from
+   their own phone. This will be common and should be a first-class button, not a workaround.
+3. **Wait briefly.** A short, bounded window for the buyer to top up their wallet. Bounded, because a rider
+   waiting unpaid is a rider losing money.
+4. **Abandon: goods return to the vendor.** Settled in principle already. The order is not delivered and no
+   money moves.
 
-Settled in principle: **the goods return to the vendor.** What the rider is paid for a trip they completed
-correctly is deferred, to be communicated at enrolment rather than discovered later.
+### What the rider is owed for a failed trip
 
-Worth flagging once more because it decides rider trust: a rider who rides to Lapaz, finds nobody home and
-rides back to Adenta for nothing will not take the next COD job. Whatever the figure is, it should be non-zero,
-known in advance, and paid automatically rather than on appeal.
+Still open, and still the thing that decides whether riders accept these jobs. A rider who rides to Lapaz,
+waits fifteen minutes while a buyer fails to pay, and rides back to Adenta has done everything right and earned
+nothing. Whatever the figure is, it should be non-zero, known at enrolment, and paid automatically rather than
+on appeal.
+
+### Tell buyers before the rider arrives
+
+The buyer chose "cash on delivery" and is about to be asked for a MoMo PIN. Close that gap early:
+
+- At checkout, under the payment method: pay by MoMo or card when the rider arrives, no cash.
+- When the rider is dispatched: *"Your rider is on the way. Have GH₵X ready on MoMo."*
+- At arrival, with the code.
+
+Three touches, each cheap, and together they prevent the argument that would otherwise happen at the door.
+
+## 12a · Wording — the highest-risk, lowest-cost change
+
+**"Cash on delivery" that forbids cash will cause arguments on doorsteps.** A buyer who selected those words
+expects to hand over notes. Rename it everywhere it appears, in the app, on the website and in emails:
+
+> **Pay on delivery** — pay by mobile money or card when the rider arrives. No cash.
+
+Keep the method selectable exactly as now; only the label and the helper text change. This is a copy change
+that costs an afternoon and prevents the most likely source of early friction, so it should land **before** the
+first rider ever knocks on a door — not in the same release as the delivery service.
 
 ## 12 · The admin plugin (WordPress)
 
@@ -383,7 +446,8 @@ entries, nonce plus capability plus step-up confirmation on destructive actions,
 migration.
 
 Screens: rider applications queue, rider roster and suspension, live job board, job detail with event log and
-photos, cash reconciliation, pricing settings, coverage areas, payouts, and reports.
+photos, **doorstep payments and failed-payment follow-up**, pricing settings, coverage areas, payouts, and
+reports.
 
 **Every delivery action writes to the existing audit log**, so delivery sits in the same forensic trail as
 everything else rather than in a parallel one.
@@ -453,8 +517,8 @@ coordinates is permanently unroutable, and the backlog grows daily.
 orders only, SMS only, no map. Goal: one real order reaches one real buyer and the code verifies.
 
 **Phase 1 — marketplace deliveries.** Rider app with duty, offers, navigation, code and photos. Buyer tracking
-in the marketplace app. Automatic job creation on processing. COD collection with cash caps. Rider onboarding
-and admin review.
+in the marketplace app. Automatic job creation on processing. **Pay-on-delivery at the door**, with the
+re-trigger and pay-by-link fallbacks. Rider onboarding and admin review.
 
 **Phase 2 — the standalone service.** Requester mode, quotes, payouts, ratings and tips, coverage areas.
 
@@ -468,7 +532,8 @@ third-party merchants.
 | Measure | Why |
 |---|---|
 | Deliveries confirmed by code, as a share of all | The integrity number. A rising bypass share means the product is failing quietly |
-| **COD cash remitted on time, and outstanding by rider** | The § 2 benefit and the § 11 risk in one number |
+| **Doorstep payment success rate, and time from prompt to paid** | The § 2 design lives or dies here |
+| Payments needing a re-trigger, or a link to a third party | Early warning that the wording or the prompt is wrong |
 | Failed deliveries by reason | Where money leaks |
 | Rider jobs per active hour, and rider retention at 30 days | Whether the economics work for the people doing the work |
 | Quoted versus actual cost | Whether pricing reflects reality |
@@ -483,8 +548,9 @@ Deliberately absent: total deliveries. It rises when you spend more and tells yo
    is removed or merely documented.
 3. **The platform service fee on standalone jobs.** With riders paying nothing, this is the entire business
    (§ 9d).
-4. **What a rider is paid for a failed COD delivery** (§ 11). Deferred, but must be settled before enrolment.
-5. **Per-rider cash cap, and who absorbs a loss** — deposit, guarantor, or the business.
+4. **Which gateway carries the doorstep prompt**, and its timeout and retry behaviour. Paystack mobile money
+   is the obvious candidate since the marketplace already uses it.
+5. **What a rider is paid when the buyer cannot pay at the door**, and how long they wait first (§ 11).
 6. **First coverage area.**
 7. **Whether the existing website delivery services** (`buyforme`, `payforme`, `localservice`) fold into this
    or retire.
