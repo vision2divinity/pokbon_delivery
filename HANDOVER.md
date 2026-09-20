@@ -103,6 +103,14 @@ Updated as work lands. Newest first.
     WordPress; `GET /dev/outbox` shows what would have been sent.
   - `packages/shared/src/lifecycle.ts` is the transition table. `packages/shared/src/settings.ts` is every
     tunable and its launch default. `apps/api/src/jobs/jobs.service.ts` is the only writer of job status.
+- **2026-09-20** — **The WordPress plugin `plugin/pokbon-delivery` is written and lints clean** (17 files).
+  Five admin screens (job board, riders, zones, price matrix, settings), the signed two-way contract, the
+  doorstep Paystack mobile-money charge, and job creation when an order reaches processing. Read
+  `plugin/pokbon-delivery/README.md`, which also lists the three known gaps rather than hiding them.
+  - Two cross-language checks passed: PHP and Node produce an identical HMAC for the same body and secret, and
+    identical distances to the metre, so a pin resolves to the same zone at checkout as at job creation.
+  - Not yet run inside WordPress. It has never been installed on a site; lint and the cross-checks are all the
+    evidence there is so far.
 - **2026-09-20** — PRD draft 3 final.
 
 ## What is next, in order
