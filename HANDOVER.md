@@ -1,7 +1,8 @@
 # POKBON Delivery — start here
 
 Written 2026-09-13, at the end of a very long session that was mostly about the marketplace, not this.
-**Read this first in any new chat, then `docs/PRD-pokbon-delivery-2026-09-13.md`.**
+**Read this first in any new chat, then `docs/PRD-pokbon-delivery-2026-09-20.md` (draft 2 — current).**
+Draft 1 (`...2026-09-13.md`) is kept for history only; its central recommendation was wrong, see below.
 
 ## What this project is
 
@@ -12,21 +13,31 @@ app they already have, and by SMS if they have no app.
 Status: **PRD draft 1 only. No code. Nothing decided.** Francis wants to review and improve the PRD before any
 build.
 
-## The one finding that should shape everything
+## The correction that matters most
 
-**POKBON AutoRescue is already a dispatch platform** and the delivery product is the same machinery with a
-different job payload. Verified by reading the code, not assumed:
+Draft 1 recommended adding a `DELIVERY` job type to POKBON AutoRescue. **That was wrong.** AutoRescue bridges
+motorists and mechanics: its providers are mechanics and tow operators, recruited for competence with broken
+vehicles. Delivery providers are couriers, recruited for coverage and speed. The job objects look alike, but
+the supply pool, onboarding, economics and dispatch rules differ, and one platform would have forced two
+unrelated businesses through a single set of compromises.
 
-- `C:\Users\franc\Downloads\POKBON AutoRescue\autorescue` — NestJS + Prisma monorepo, `apps/{api,mobile,web,ops}`
-- Its dispatch controller already has duty toggle, location pings, offer/accept/decline with cascade, and a job
-  lifecycle of en-route → arrive → estimate → complete → close, plus ops board, stats and CSV exports
-- Phone OTP auth with per-phone and per-IP rate limiting
-- MapLibre on mobile (`@maplibre/maplibre-react-native`) and web (`maplibre-gl`)
-- Its own handoff, dated 2026-08-17, says 43 of 54 designed screens are built and running on real devices
-- Screen 18 is an **arrival code, "the four digits that prove identity"** — exactly the delivery code concept
+**Harvest, do not merge.** From `C:\Users\franc\Downloads\POKBON AutoRescue\autorescue` take the MapLibre setup
+(mobile and web), the rate-limited phone OTP auth, the duty and location-ping plumbing, the job lifecycle shape
+and event log, the arrival-code screen, and the NestJS + Prisma project layout. Do not share a database, a
+deployment, or a rider identity. If the dispatch core is worth sharing later, extract it as a package both
+services depend on, never one service serving both.
 
-The PRD recommends extending AutoRescue with a `DELIVERY` job type rather than starting a second platform.
-That recommendation is the first thing to accept or reject, because § 7 of the PRD depends on it.
+## The strongest reason to build this
+
+**Cash on delivery breaks commission collection, and a POKBON rider fixes it structurally.** Today a COD order
+is money that never touches POKBON: the vendor takes cash and owes commission on a sale POKBON cannot see
+settle. Plugin 1.20 already treats this as the central problem — netting was made mandatory because, in the
+code's own words, a vendor sits on COD cash — but netting only recovers the debt later, from future payouts, if
+there are future payouts. Put a POKBON rider in the middle and the rider collects the cash, POKBON nets its
+commission and remits the rest. The debt never forms.
+
+The price of that benefit is riders holding cash, which is why the PRD's cash-cap and reconciliation section
+must be designed at the same time, not bolted on later.
 
 ## Where things live
 
@@ -90,3 +101,15 @@ Relevant only so a new chat does not trip over it:
 - Plugin **1.20.0 live**; affiliate bridge **off**; all 199 affiliates on one universal code
 - One Dependabot alert open **on purpose**, documented in the marketplace `HANDOFF.md` § 1ae
 - Product-page Share now emits a clean link; referral links only come from the affiliate dashboard
+
+## The marketplace half is already specified
+
+`C:\Users\franc\Downloads\pokbon_mobile_app\docs\DELIVERY_INTEGRATION_2026-09-20.md` pins the contract between
+the two: service-to-service auth, the order meta the marketplace must hold, job creation, the status callback,
+the buyer tracking endpoint, and the conventions any plugin work must follow. Build the delivery side against
+that file rather than inventing shapes, the way the admin console contract was used in September.
+
+**The one thing worth building before anything else** is drop-off coordinate capture at checkout. Every order
+placed without coordinates is permanently unroutable and that backlog grows daily. It is useful even if
+delivery is never built.
+
