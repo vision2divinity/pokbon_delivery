@@ -1,0 +1,21 @@
+{
+  "name": "pokbon-delivery",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace=@pokbon-delivery/api",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:up": "docker compose up -d postgres",
+    "db:push": "npm run db:push --workspace=@pokbon-delivery/api",
+    "smoke": "node scripts/smoke-phase0.mjs"
+  }
+}

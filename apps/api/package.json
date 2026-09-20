@@ -1,0 +1,54 @@
+{
+  "name": "@pokbon-delivery/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "//": "@pokbon-delivery/shared is consumed as built output, so it must compile first.",
+    "prebuild": "npm run build --workspace=@pokbon-delivery/shared",
+    "predev": "npm run build --workspace=@pokbon-delivery/shared",
+    "pretypecheck": "npm run build --workspace=@pokbon-delivery/shared",
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "test": "jest",
+    "db:push": "dotenv -e ../../.env -- prisma db push",
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:studio": "dotenv -e ../../.env -- prisma studio",
+    "db:seed": "dotenv -e ../../.env -- node ../../scripts/seed-dev.mjs",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.1",
+    "@nestjs/config": "^3.2.3",
+    "@nestjs/core": "^10.4.1",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/platform-express": "^10.4.1",
+    "@pokbon-delivery/shared": "*",
+    "@prisma/client": "^5.18.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.4",
+    "@nestjs/schematics": "^10.1.4",
+    "@nestjs/testing": "^10.4.1",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.14.15",
+    "dotenv-cli": "^7.4.2",
+    "jest": "^29.7.0",
+    "prisma": "^5.18.0",
+    "ts-jest": "^29.2.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": ".",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": { "^.+\\.ts$": ["ts-jest", { "tsconfig": "tsconfig.json" }] },
+    "testEnvironment": "node"
+  }
+}

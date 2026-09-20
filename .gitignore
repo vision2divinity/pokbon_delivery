@@ -1,0 +1,34 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+
+# Local photo store used by the API in development. Deployments use object storage.
+apps/api/.uploads/
+.uploads/
+
+# Background dev-server log
+api-dev.log
+
+# Expo / Android build output (apps/mobile, when it lands)
+apps/mobile/android/app/build/
+apps/mobile/android/build/
+apps/mobile/android/.gradle/
+apps/mobile/.expo/
+**/.gradle/
+**/.cxx/
+
+backups/

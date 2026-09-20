@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": false,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2022",
+    "sourceMap": true,
+    "outDir": "./dist",
+    // Pinned to src so adding test/ to include never relocates dist/main.js.
+    "rootDir": "./src",
+    "baseUrl": "./",
+    "incremental": true,
+    // Inside dist so Nest's deleteOutDir clears it with everything else.
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "skipLibCheck": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true
+    // No `paths` mapping to ../../packages/shared/src: the shared package is
+    // consumed as built output through the workspace symlink, which is why the
+    // scripts build it first.
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

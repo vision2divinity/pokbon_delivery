@@ -93,6 +93,28 @@ Expensive lessons, not preferences.
 
 Updated as work lands. Newest first.
 
-- **2026-09-20** — PRD draft 3 final. Monorepo scaffold and Delivery API begun in `apps/api`: Prisma schema, job
-  state machine, OTP auth harvested from AutoRescue, rider endpoints, plugin contract endpoints. See
-  `apps/api/README.md` for what runs and how.
+- **2026-09-20** — **Delivery API runs and passes the phase 0 smoke test end to end** (`npm run smoke` after
+  `npm run dev` and `scripts/seed-dev.mjs`). One pay-on-delivery marketplace job: created by the plugin, assigned
+  by hand, pickup, arrival, code sent to the buyer by SMS through the plugin, wrong code refused, right code
+  matched, MoMo prompt requested, hand-over refused until paid, plugin reports paid, hand-over, rider fee
+  credited, every status callback queued for the plugin. The rider payloads are asserted to carry no buyer
+  price, no order amount and no code. Read `apps/api/README.md`.
+  - Stack: NestJS 10, Prisma 5, Postgres in Docker on **5435**, API on **3001**. `PLUGIN_MODE=console` needs no
+    WordPress; `GET /dev/outbox` shows what would have been sent.
+  - `packages/shared/src/lifecycle.ts` is the transition table. `packages/shared/src/settings.ts` is every
+    tunable and its launch default. `apps/api/src/jobs/jobs.service.ts` is the only writer of job status.
+- **2026-09-20** — PRD draft 3 final.
+
+## What is next, in order
+
+1. **The WordPress plugin `plugin/pokbon-delivery`.** The API's counterpart. Zones, price matrix, commission
+   schedule and settings pages (push to `POST /plugin/settings/sync` on save); the inbound endpoints the API
+   calls (`/delivery/messages/sms` via `class-sms.php`, `/delivery/messages/inbox`, `/delivery/payment/prompt`
+   using Paystack's **charge** API with a mobile-money payload, `/delivery/payment/{id}`, `/delivery/callback`
+   writing the order meta and `_pokbon_paid_on_delivery`); job creation when an order hits processing; the
+   rider queue and live board reading the API. Follow the marketplace plugin's conventions listed above.
+2. **The rider app `apps/mobile`.** Expo, harvested from AutoRescue mobile. Screens for phase 0: OTP login,
+   application, duty toggle, active job, Arrived, Send code, code entry, Send prompt again, PAID hand-over
+   screen, photos, failed/returned.
+3. **Rider push for offers** (phase 1). Offers are polled at `GET /rider/jobs/offers` until then.
+4. **Rename "Cash on delivery" to "Pay on delivery"** in the marketplace app, with the rollout.

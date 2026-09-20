@@ -1,0 +1,27 @@
+services:
+  postgres:
+    # PostGIS so zone resolution can move to real geometry later without
+    # recreating the volume. Plain lat/lng columns are used for now.
+    image: postgis/postgis:16-3.4
+    container_name: pokbon-delivery-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pokbon
+      POSTGRES_PASSWORD: pokbon
+      POSTGRES_DB: pokbon_delivery
+    ports:
+      # Host port 5435. On this machine 5432 and 5433 are native PostgreSQL
+      # services and 5434 is AutoRescue's container. Docker reports a mapping on
+      # a taken port without error while host traffic still reaches the other
+      # server, producing a confusing auth failure against a healthy container.
+      - "5435:5432"
+    volumes:
+      - pokbon-delivery-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pokbon -d pokbon_delivery"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pokbon-delivery-pgdata:

@@ -1,0 +1,435 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// RIDERS — PRD draft 3 § 4a, § 10. Independent contractors, signed in by phone.
+// ===========================================================================
+
+model Rider {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// E.164. The login identity.
+  phone    String  @unique
+  fullName String? @map("full_name")
+
+  /// DRAFT | APPLIED | APPROVED | SUSPENDED | REJECTED | LEFT
+  status String @default("DRAFT")
+
+  vehicleClass        String? @map("vehicle_class")
+  vehicleRegistration String? @map("vehicle_registration")
+  baseZoneCode        String? @map("base_zone_code")
+
+  /// GHANA_CARD | VOTER_ID
+  idType   String? @map("id_type")
+  /// Stored for the reviewer. Treat as personal data: encrypt at rest before
+  /// go-live (PRD § 14.6) and restrict who in admin may read it.
+  idNumber String? @map("id_number")
+  /// PHOTO | NFC | NIA — what was actually checked. Never let a scan read as "verified".
+  idVerificationLevel String @default("PHOTO") @map("id_verification_level")
+
+  licenceNumber  String? @map("licence_number")
+  momoNumber     String? @map("momo_number")
+  nextOfKinName  String? @map("next_of_kin_name")
+  nextOfKinPhone String? @map("next_of_kin_phone")
+
+  photoUrl        String? @map("photo_url")
+  idPhotoUrl      String? @map("id_photo_url")
+  licencePhotoUrl String? @map("licence_photo_url")
+
+  /// Contractor agreement. Versioned; re-accepted when it changes (§ 10).
+  agreementVersion    String?   @map("agreement_version")
+  agreementAcceptedAt DateTime? @map("agreement_accepted_at")
+
+  onDuty        Boolean   @default(false) @map("on_duty")
+  dutyChangedAt DateTime? @map("duty_changed_at")
+
+  completedJobs Int    @default(0) @map("completed_jobs")
+  ratingAvg     Float? @map("rating_avg")
+  ratingCount   Int    @default(0) @map("rating_count")
+
+  /// Failed-trip credit waiting to be consumed by the next DELIVERED (§ 11).
+  pendingUpliftMinor Int @default(0) @map("pending_uplift_minor")
+
+  reviewNote String?   @map("review_note")
+  decidedBy  String?   @map("decided_by")
+  decidedAt  DateTime? @map("decided_at")
+  appliedAt  DateTime? @map("applied_at")
+  lastSeenAt DateTime? @map("last_seen_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  location      RiderLocation?
+  jobs          Job[]
+  offers        JobOffer[]
+  refreshTokens RefreshToken[]
+  earnings      RiderEarning[]
+  photos        JobPhoto[]
+
+  @@index([status])
+  @@index([onDuty, status])
+  @@map("riders")
+}
+
+/// Latest known position. One row per rider: presence, not history (§ 14.6).
+model RiderLocation {
+  riderId String @id @db.Uuid @map("rider_id")
+  rider   Rider  @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  lat      Float
+  lng      Float
+  accuracy Int?
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("rider_locations")
+}
+
+model OtpChallenge {
+  id String @id @default(uuid()) @db.Uuid
+
+  phone    String
+  /// scrypt hash. Plaintext is never stored.
+  codeHash String @map("code_hash")
+
+  expiresAt  DateTime  @map("expires_at")
+  attempts   Int       @default(0)
+  consumedAt DateTime? @map("consumed_at")
+  requestIp  String?   @map("request_ip")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+  @@map("otp_challenges")
+}
+
+model RefreshToken {
+  id String @id @default(uuid()) @db.Uuid
+
+  rider   Rider  @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  riderId String @db.Uuid @map("rider_id")
+
+  /// SHA-256 of a 256-bit random token.
+  tokenHash      String    @unique @map("token_hash")
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  replacedByHash String?   @map("replaced_by_hash")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([riderId])
+  @@map("refresh_tokens")
+}
+
+// ===========================================================================
+// SETTINGS CACHE — the plugin is the source of truth. PRD § 1a, § 9, § 12b.
+// ===========================================================================
+
+model Zone {
+  code         String  @id
+  name         String
+  region       String?
+  lat          Float
+  lng          Float
+  radiusMetres Int     @map("radius_metres")
+  active       Boolean @default(true)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("zones")
+}
+
+/// One ordered pair of zones. Amounts in pesewas. The margin is the difference.
+model ZonePrice {
+  id String @id @default(uuid()) @db.Uuid
+
+  fromZoneCode String @map("from_zone_code")
+  toZoneCode   String @map("to_zone_code")
+
+  riderFeeMinor   Int @map("rider_fee_minor")
+  buyerPriceMinor Int @map("buyer_price_minor")
+
+  /// Plugin sync version that set this row. Frozen onto jobs as priceVersion.
+  version Int
+  active  Boolean @default(true)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([fromZoneCode, toZoneCode])
+  @@map("zone_prices")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// ===========================================================================
+// JOBS — PRD § 7. Forward only; events are the record.
+// ===========================================================================
+
+model Job {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// `${source}:${orderId}:${vendorId ?? '-'}`. A replayed job creation returns
+  /// the existing job instead of dispatching twice.
+  idempotencyKey String @unique @map("idempotency_key")
+
+  /// MARKETPLACE | STANDALONE
+  source      String
+  /// Marketplace order id, or the plugin's standalone request id.
+  externalRef String  @map("external_ref")
+  vendorId    String? @map("vendor_id")
+  buyerUserId String? @map("buyer_user_id")
+
+  /// POKBON | VENDOR — whether POKBON is in the money flow for this delivery (§ 2).
+  riderSource String @default("POKBON") @map("rider_source")
+
+  status String @default("CREATED")
+
+  pickupLat          Float   @map("pickup_lat")
+  pickupLng          Float   @map("pickup_lng")
+  pickupAddress      String  @map("pickup_address")
+  pickupZoneCode     String? @map("pickup_zone_code")
+  pickupContactName  String  @default("") @map("pickup_contact_name")
+  pickupContactPhone String  @map("pickup_contact_phone")
+
+  dropoffLat          Float   @map("dropoff_lat")
+  dropoffLng          Float   @map("dropoff_lng")
+  dropoffAddress      String  @map("dropoff_address")
+  dropoffZoneCode     String? @map("dropoff_zone_code")
+  dropoffGhanaPost    String? @map("dropoff_ghana_post")
+  dropoffNote         String? @map("dropoff_note")
+  dropoffContactName  String  @default("") @map("dropoff_contact_name")
+  dropoffContactPhone String  @map("dropoff_contact_phone")
+
+  /// SMALL | MEDIUM | LARGE
+  parcelSize         String @map("parcel_size")
+  itemCount          Int    @default(1) @map("item_count")
+  declaredValueMinor Int    @default(0) @map("declared_value_minor")
+
+  /// PREPAID | PAY_ON_DELIVERY
+  paymentMethod String @map("payment_method")
+  /// What the buyer approves at the door, pesewas. Items plus delivery.
+  /// NEVER serialised to a rider (§ 9c). The plugin decides the amount.
+  amountDueMinor Int @default(0) @map("amount_due_minor")
+
+  /// Frozen at creation (§ 9b). A later matrix edit never changes a live job.
+  riderFeeMinor   Int  @map("rider_fee_minor")
+  /// NEVER serialised to a rider (§ 9c).
+  buyerPriceMinor Int  @map("buyer_price_minor")
+  priceVersion    Int? @map("price_version")
+
+  /// Commission in force when the job was created (§ 9d). Zero at launch.
+  commissionRateBps   Int @default(0) @map("commission_rate_bps")
+  commissionFlatMinor Int @default(0) @map("commission_flat_minor")
+  /// Failed-trip uplift paid on this job, if it consumed one (§ 11).
+  upliftMinor Int @default(0) @map("uplift_minor")
+
+  rider            Rider?  @relation(fields: [riderId], references: [id])
+  riderId          String? @db.Uuid @map("rider_id")
+  manualAssignedBy String? @map("manual_assigned_by")
+
+  /// Doorstep payment, owned by the plugin; mirrored here for the rider's screen.
+  paymentIntentId     String?   @map("payment_intent_id")
+  paymentRef          String?   @map("payment_ref")
+  /// pending | paid | failed | expired
+  paymentStatus       String?   @map("payment_status")
+  promptCount         Int       @default(0) @map("prompt_count")
+  paymentPendingSince DateTime? @map("payment_pending_since")
+
+  codeSends        Int     @default(0) @map("code_sends")
+  codeBypassedBy   String? @map("code_bypassed_by")
+  codeBypassReason String? @map("code_bypass_reason")
+
+  failureReason String? @map("failure_reason")
+  failureDetail String? @map("failure_detail")
+  cancelReason  String? @map("cancel_reason")
+  cancelledBy   String? @map("cancelled_by")
+
+  assignedAt     DateTime? @map("assigned_at")
+  atPickupAt     DateTime? @map("at_pickup_at")
+  pickedUpAt     DateTime? @map("picked_up_at")
+  arrivedAt      DateTime? @map("arrived_at")
+  codeVerifiedAt DateTime? @map("code_verified_at")
+  paidAt         DateTime? @map("paid_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  failedAt       DateTime? @map("failed_at")
+  returnedAt     DateTime? @map("returned_at")
+  cancelledAt    DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  offers   JobOffer[]
+  events   JobEvent[]
+  photos   JobPhoto[]
+  codes    DeliveryCode[]
+  earnings RiderEarning[]
+
+  @@index([status, createdAt])
+  @@index([riderId, status])
+  @@index([source, externalRef])
+  @@index([paymentIntentId])
+  @@map("jobs")
+}
+
+model JobOffer {
+  id String @id @default(uuid()) @db.Uuid
+
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId String @db.Uuid @map("job_id")
+
+  rider   Rider  @relation(fields: [riderId], references: [id])
+  riderId String @db.Uuid @map("rider_id")
+
+  /// Position in the cascade, from 1.
+  sequence Int
+  /// OFFERED | ACCEPTED | DECLINED | EXPIRED | WITHDRAWN
+  status String @default("OFFERED")
+
+  /// Straight-line rider-to-pickup at offer time, for auditing the matcher.
+  distanceMetres Int @map("distance_metres")
+
+  expiresAt     DateTime  @map("expires_at")
+  offeredAt     DateTime  @default(now()) @map("offered_at")
+  respondedAt   DateTime? @map("responded_at")
+  declineReason String?   @map("decline_reason")
+
+  @@unique([jobId, riderId])
+  @@index([jobId, sequence])
+  @@index([status, expiresAt])
+  @@index([riderId, status])
+  @@map("job_offers")
+}
+
+/// Immutable timeline. The audit trail and the dispute record.
+model JobEvent {
+  id BigInt @id @default(autoincrement())
+
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId String @db.Uuid @map("job_id")
+
+  type   String
+  /// rider:<id> | plugin:<actor> | system | buyer
+  actor  String
+  detail Json?
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  @@index([jobId, occurredAt])
+  @@map("job_events")
+}
+
+/// The delivery code. Generated here, sent to the buyer by the plugin, compared
+/// here. The rider's app submits an attempt and learns only match or no match.
+model DeliveryCode {
+  id String @id @default(uuid()) @db.Uuid
+
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId String @db.Uuid @map("job_id")
+
+  /// scrypt hash, salted with the job id. Plaintext never stored, never logged.
+  codeHash String @map("code_hash")
+
+  expiresAt  DateTime  @map("expires_at")
+  attempts   Int       @default(0)
+  verifiedAt DateTime? @map("verified_at")
+  lockedAt   DateTime? @map("locked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([jobId, createdAt])
+  @@map("delivery_codes")
+}
+
+model JobPhoto {
+  id String @id @default(uuid()) @db.Uuid
+
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId String @db.Uuid @map("job_id")
+
+  rider   Rider?  @relation(fields: [riderId], references: [id])
+  riderId String? @db.Uuid @map("rider_id")
+
+  /// PICKUP | DELIVERY | FAILURE
+  kind        String
+  url         String
+  contentType String @map("content_type")
+  bytes       Int
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([jobId])
+  @@map("job_photos")
+}
+
+/// A rider's balance, as entries. Signed pesewas. FEE and UPLIFT credit,
+/// COMMISSION and PAYOUT debit. Sum = balance.
+model RiderEarning {
+  id String @id @default(uuid()) @db.Uuid
+
+  rider   Rider  @relation(fields: [riderId], references: [id])
+  riderId String @db.Uuid @map("rider_id")
+
+  job   Job?    @relation(fields: [jobId], references: [id])
+  jobId String? @db.Uuid @map("job_id")
+
+  /// FEE | UPLIFT | COMMISSION | PAYOUT | ADJUSTMENT
+  type        String
+  amountMinor Int     @map("amount_minor")
+  note        String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([riderId, createdAt])
+  @@map("rider_earnings")
+}
+
+// ===========================================================================
+// PLUGIN CONTRACT PLUMBING — idempotency in, retries out.
+// ===========================================================================
+
+/// Every signed inbound call, by its event id. A replay gets the stored answer.
+model InboundEvent {
+  eventId String @id @map("event_id")
+  route   String
+
+  responseStatus Int?  @map("response_status")
+  responseBody   Json? @map("response_body")
+
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([receivedAt])
+  @@map("inbound_events")
+}
+
+/// Callbacks and requests to the plugin, delivered with retries by the outbox.
+model OutboundEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// job.status | sms.send | inbox.send | payment.prompt
+  type    String
+  payload Json
+
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at")
+  deliveredAt   DateTime? @map("delivered_at")
+  lastError     String?   @map("last_error")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([deliveredAt, nextAttemptAt])
+  @@map("outbound_events")
+}
