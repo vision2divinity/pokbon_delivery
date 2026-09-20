@@ -10,8 +10,7 @@ A delivery dispatch network for POKBON: marketplace orders that need to reach a 
 "move this for me" jobs. Riders use a dedicated app. Customers track on a map inside the POKBON Marketplace
 app they already have, and by SMS if they have no app.
 
-Status: **PRD draft 1 only. No code. Nothing decided.** Francis wants to review and improve the PRD before any
-build.
+Status: **PRD draft 2. No code. Nothing decided.** Francis reviews and improves the PRD before any build.
 
 ## The correction that matters most
 
@@ -62,7 +61,8 @@ Do not rebuild these. Each was verified on 2026-09-13.
 - **Vendor commission and margin engine**: plugin 1.20.0 — it needs real delivery cost per order, which this
   project is what finally supplies
 
-**Missing and needed**: customer address coordinates, and a routing engine. See PRD § 7b and § 9.
+**Missing and needed**: customer address coordinates, and a routing engine (self-hosted OSRM or Valhalla on a
+Ghana extract). See PRD draft 2 § 13 and its appendix.
 
 ## Constraints carried over from the marketplace work
 
@@ -84,20 +84,21 @@ These are expensive lessons, not preferences.
 
 ## Open decisions Francis has to make
 
-From PRD § 13, repeated because they block design rather than build:
+From PRD draft 2 § 17, repeated because they block design rather than build:
 
 1. Riders as employees or contractors
-2. Own rider network or partner with an existing courier
-3. Which area to start in
-4. Cash on delivery in phase 1, or prepaid only
-5. Whether AutoRescue's providers would also take parcel jobs
-6. What the last 100 deliveries actually cost, if that number exists anywhere
+2. Who pays the delivery fee on a marketplace order: buyer, vendor or split
+3. Is the Ghana Card verified against NIA, or only photographed
+4. First coverage area
+5. The rider cash cap, and who absorbs a loss
+6. Whether the existing website delivery services fold into this or retire
+7. What deliveries currently cost POKBON, if that number exists anywhere
 
 ## Where the marketplace stood when this was written
 
 Relevant only so a new chat does not trip over it:
 
-- App **1.4.1 live** on Google Play; **1.4.2 in review**, carrying the deep-link fix
+- App **1.4.2 live** on Google Play since 14 Sep (version code 13, 100% rollout), carrying both deep-link fixes
 - Plugin **1.20.0 live**; affiliate bridge **off**; all 199 affiliates on one universal code
 - One Dependabot alert open **on purpose**, documented in the marketplace `HANDOFF.md` § 1ae
 - Product-page Share now emits a clean link; referral links only come from the affiliate dashboard
