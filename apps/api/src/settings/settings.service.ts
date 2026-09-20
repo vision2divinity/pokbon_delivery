@@ -34,8 +34,16 @@ export class SettingsService implements OnModuleInit {
       try {
         const payload = await this.plugin.pullSettings();
         if (payload) {
-          const applied = await this.applySync(payload);
-          this.logger.log(`Pulled settings from the plugin: version ${applied.version}`);
+          // `force`, because a PULL is by definition the plugin's current
+          // state. The version guard exists to stop two admin saves arriving
+          // out of order on a PUSH; applying it here instead made the API
+          // silently keep stale prices and log success — which is how a rider
+          // ends up dispatched on a fee nobody set.
+          const applied = await this.applySync(payload, { force: true });
+          this.logger.log(
+            `Pulled settings from the plugin: version ${applied.version}, ` +
+              `${applied.zones} zone(s), ${applied.prices} price(s)`,
+          );
         }
       } catch (error) {
         // Boot on the cache. A plugin that is briefly down must not take dispatch with it.
@@ -66,15 +74,26 @@ export class SettingsService implements OnModuleInit {
    * pesewas. A sync with a lower version than the one already applied is
    * ignored — two admin tabs saving out of order must not roll prices back.
    */
-  async applySync(raw: unknown): Promise<{ version: number; zones: number; prices: number; settings: number; ignored?: boolean }> {
+  async applySync(
+    raw: unknown,
+    opts: { force?: boolean } = {},
+  ): Promise<{ version: number; zones: number; prices: number; settings: number; ignored?: boolean }> {
     const parsed = settingsSyncSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(`Invalid settings sync: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
     }
     const payload: z.infer<typeof settingsSyncSchema> = parsed.data;
 
-    if (payload.version < this.version) {
-      this.logger.warn(`Ignoring settings sync v${payload.version}; already at v${this.version}`);
+    if (!opts.force && payload.version < this.version) {
+      // Deliberately a warning, not a debug line. Silently keeping old prices
+      // looks identical to working correctly until somebody is paid the wrong
+      // amount.
+      this.logger.warn(
+        `IGNORED a settings sync: it carried v${payload.version} and this service is already at ` +
+          `v${this.version}, so it was treated as out of order. Prices and zones are UNCHANGED. ` +
+          `If the plugin was reinstalled its counter may have restarted — push again from the ` +
+          `plugin, which forces its own version.`,
+      );
       return { version: this.version, zones: 0, prices: 0, settings: 0, ignored: true };
     }
 
