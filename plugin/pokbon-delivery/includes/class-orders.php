@@ -244,42 +244,189 @@ class Pokbon_Delivery_Orders {
 	/**
 	 * Where the rider collects.
 	 *
-	 * Vendor store coordinates are marketplace-plugin territory and differ by
-	 * vendor plugin, so this asks rather than assumes. Wire the filter to the
-	 * real source; until then the configured default pickup zone is used,
-	 * which is correct for a single-warehouse phase 0.
+	 * Four sources, best first. A vendor with real coordinates beats a default
+	 * every time, because a rider sent to the wrong end of Accra is the most
+	 * expensive mistake this system can make.
+	 *
+	 *   1. The `pokbon_delivery_vendor_pickup` filter, for anything bespoke.
+	 *   2. The vendor's own WCFM store location, which is where the marketplace
+	 *      already reads vendor pickup addresses from.
+	 *   3. A configured pickup point belonging to this vendor.
+	 *   4. The default pickup in Settings, correct for a single-warehouse start.
+	 *
+	 * Returns null rather than a guess. A job with the wrong pickup is worse
+	 * than a job that was never created, because a rider is dispatched on it.
 	 */
 	private static function pickup_for( $vendor_id, $order ): ?array {
-		$pickup = apply_filters( 'pokbon_delivery_vendor_pickup', null, $vendor_id, $order );
-		if ( is_array( $pickup ) && isset( $pickup['lat'], $pickup['lng'] ) ) {
-			$pickup['zoneCode'] = $pickup['zoneCode']
-				?? Pokbon_Delivery_Geo::resolve_zone_code( (float) $pickup['lat'], (float) $pickup['lng'] );
-			return $pickup['zoneCode'] === '' ? null : $pickup;
+		$vendor_id = (int) $vendor_id;
+
+		foreach ( [
+			apply_filters( 'pokbon_delivery_vendor_pickup', null, $vendor_id, $order ),
+			self::vendor_store_pickup( $vendor_id ),
+			self::pickup_point_for_vendor( $vendor_id ),
+			self::default_pickup(),
+		] as $candidate ) {
+			$resolved = self::validate_pickup( $candidate );
+			if ( $resolved !== null ) {
+				return $resolved;
+			}
 		}
 
-		$default_code = (string) Pokbon_Delivery_Settings::get( 'default_pickup_zone' );
-		if ( $default_code === '' ) {
-			return null;
-		}
-		$zone = Pokbon_Delivery_Settings::zone( $default_code );
-		if ( ! $zone ) {
+		return null;
+	}
+
+	/**
+	 * A pickup is only usable with coordinates inside a served zone and a phone
+	 * a rider can actually call. Anything missing one of those is discarded here
+	 * rather than surfacing as a job nobody can complete.
+	 */
+	private static function validate_pickup( $candidate ): ?array {
+		if ( ! is_array( $candidate ) ) {
 			return null;
 		}
 
-		$phone = Pokbon_Delivery_Messages::normalise_ghana_phone(
-			(string) Pokbon_Delivery_Settings::get( 'default_pickup_phone' )
-		);
+		$lat = (float) ( $candidate['lat'] ?? 0 );
+		$lng = (float) ( $candidate['lng'] ?? 0 );
+		if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
+			return null;
+		}
+
+		$zone = (string) ( $candidate['zoneCode'] ?? '' );
+		if ( $zone === '' ) {
+			$zone = Pokbon_Delivery_Geo::resolve_zone_code( $lat, $lng );
+		}
+		if ( $zone === '' ) {
+			return null; // Collection point outside every coverage area.
+		}
+
+		$phone = Pokbon_Delivery_Messages::normalise_ghana_phone( (string) ( $candidate['contactPhone'] ?? '' ) );
 		if ( $phone === '' ) {
+			return null;
+		}
+
+		return [
+			'lat'          => $lat,
+			'lng'          => $lng,
+			'address'      => sanitize_text_field( (string) ( $candidate['address'] ?? '' ) ),
+			'zoneCode'     => $zone,
+			'contactName'  => sanitize_text_field( (string) ( $candidate['contactName'] ?? '' ) ),
+			'contactPhone' => $phone,
+		];
+	}
+
+	/**
+	 * The vendor's store location as WCFM stores it.
+	 *
+	 * Key shapes copied from the marketplace's own pickup-points endpoint, which
+	 * already solved this: the modern serialised profile array first, then the
+	 * legacy individual meta keys. Reading it the same way means a vendor who
+	 * appears as a pickup point in the app is dispatchable here too.
+	 */
+	private static function vendor_store_pickup( int $vendor_id ): ?array {
+		if ( $vendor_id <= 0 ) {
+			return null;
+		}
+		$user = get_userdata( $vendor_id );
+		if ( ! $user ) {
+			return null;
+		}
+
+		$profile = get_user_meta( $vendor_id, 'wcfmmp_profile_settings', true );
+		$address = '';
+		$city    = '';
+		$phone   = '';
+
+		if ( is_array( $profile ) ) {
+			$a       = is_array( $profile['address'] ?? null ) ? $profile['address'] : [];
+			$address = (string) ( $a['addr_1'] ?? '' );
+			$city    = (string) ( $a['city'] ?? '' );
+			$phone   = (string) ( $profile['phone'] ?? '' );
+		}
+
+		if ( $address === '' ) {
+			$address = (string) get_user_meta( $vendor_id, '_wcfmmp_address', true );
+		}
+		if ( $city === '' ) {
+			$city = (string) get_user_meta( $vendor_id, '_wcfmmp_city', true );
+		}
+		if ( $phone === '' ) {
+			$phone = (string) get_user_meta( $vendor_id, '_wcfmmp_phone', true );
+		}
+
+		$lat = (float) get_user_meta( $vendor_id, '_wcfmmp_lat', true );
+		if ( $lat === 0.0 ) {
+			$lat = (float) get_user_meta( $vendor_id, '_wcfm_lat', true );
+		}
+		$lng = (float) get_user_meta( $vendor_id, '_wcfmmp_lng', true );
+		if ( $lng === 0.0 ) {
+			$lng = (float) get_user_meta( $vendor_id, '_wcfm_lng', true );
+		}
+
+		$store_name = (string) get_user_meta( $vendor_id, 'store_name', true );
+		if ( $store_name === '' ) {
+			$store_name = $user->display_name;
+		}
+
+		return [
+			'lat'          => $lat,
+			'lng'          => $lng,
+			'address'      => trim( $address . ( $city !== '' ? ', ' . $city : '' ) ),
+			'contactName'  => $store_name,
+			'contactPhone' => $phone,
+		];
+	}
+
+	/**
+	 * A configured pickup point belonging to this vendor.
+	 *
+	 * These already carry latitude and longitude and are already curated by the
+	 * owner, which makes them more trustworthy than a vendor-entered pin.
+	 */
+	private static function pickup_point_for_vendor( int $vendor_id ): ?array {
+		if ( ! class_exists( 'Pokbon_App_Pickup_Points_Endpoint' ) ) {
+			return null;
+		}
+
+		$store  = get_option( Pokbon_App_Pickup_Points_Endpoint::OPTION_KEY, [] );
+		$points = is_array( $store['points'] ?? null ) ? $store['points'] : [];
+
+		foreach ( $points as $point ) {
+			if ( empty( $point['enabled'] ) ) {
+				continue;
+			}
+			if ( (int) ( $point['vendorId'] ?? 0 ) !== $vendor_id ) {
+				continue;
+			}
+			return [
+				'lat'          => (float) ( $point['latitude'] ?? 0 ),
+				'lng'          => (float) ( $point['longitude'] ?? 0 ),
+				'address'      => (string) ( $point['address'] ?? $point['name'] ?? '' ),
+				'contactName'  => (string) ( $point['name'] ?? '' ),
+				'contactPhone' => (string) ( $point['phone'] ?? '' ),
+			];
+		}
+
+		return null;
+	}
+
+	/** The single collection point configured in Settings. */
+	private static function default_pickup(): ?array {
+		$code = (string) Pokbon_Delivery_Settings::get( 'default_pickup_zone' );
+		if ( $code === '' ) {
+			return null;
+		}
+		$zone = Pokbon_Delivery_Settings::zone( $code );
+		if ( ! $zone ) {
 			return null;
 		}
 
 		return [
 			'lat'          => (float) $zone['lat'],
 			'lng'          => (float) $zone['lng'],
-			'address'      => (string) ( Pokbon_Delivery_Settings::get( 'default_pickup_address' ) ?: $zone['name'] ),
 			'zoneCode'     => (string) $zone['code'],
+			'address'      => (string) ( Pokbon_Delivery_Settings::get( 'default_pickup_address' ) ?: $zone['name'] ),
 			'contactName'  => (string) ( Pokbon_Delivery_Settings::get( 'default_pickup_contact' ) ?: 'POKBON' ),
-			'contactPhone' => $phone,
+			'contactPhone' => (string) Pokbon_Delivery_Settings::get( 'default_pickup_phone' ),
 		];
 	}
 

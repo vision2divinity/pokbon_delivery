@@ -338,9 +338,15 @@ export class JobsService {
           {
             buyerUserId: job.buyerUserId,
             title: 'Your rider has arrived',
-            body: `Your delivery code is ${code}. Read it to the rider only.${amountLine}`,
+            // THE CODE IS DELIBERATELY NOT IN HERE. The marketplace app's inbox
+            // is filled by push notifications, so anything in this body is
+            // readable on a locked screen by whoever is holding the phone —
+            // which is exactly what the code exists to prevent (PRD § 7). The
+            // SMS above carries the code; this only tells them to go and read it.
+            body: `Your rider is at your door. Your delivery code has been sent to you by SMS — read it to the rider.${amountLine}`,
             jobId,
             orderId: job.externalRef,
+            purpose: 'arrival_no_code',
           },
           tx,
         );

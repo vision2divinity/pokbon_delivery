@@ -135,6 +135,7 @@ class Pokbon_Delivery_Admin {
 					'payout_cycle'          => in_array( ( $_POST['payout_cycle'] ?? '' ), [ 'daily', 'weekly', 'fortnightly' ], true )
 						? sanitize_key( wp_unslash( $_POST['payout_cycle'] ) ) : 'weekly',
 					'auto_create_jobs'      => ! empty( $_POST['auto_create_jobs'] ),
+					'rename_cod_label'      => ! empty( $_POST['rename_cod_label'] ),
 					'default_pickup_zone'   => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_zone'] ?? '' ) ),
 					'default_pickup_address' => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_address'] ?? '' ) ),
 					'default_pickup_contact' => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_contact'] ?? '' ) ),

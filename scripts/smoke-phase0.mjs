@@ -53,6 +53,25 @@ if (me.status === 'APPLIED' || me.status === 'SUSPENDED') {
 assert.equal(me.status, 'APPROVED');
 await riderCall(base, rider, 'PUT', '/rider/me/duty', { onDuty: true, lat: 5.6689, lng: -0.1651 });
 
+// 3b. Release anything this rider is still holding from an earlier run.
+//
+// The concurrency cap is real and correct — a rider at their limit cannot be
+// assigned another job — so a smoke test that leaves a job half-finished will
+// refuse to run a second time. Clearing up first makes the test repeatable and
+// exercises the failure and return path on the way through.
+{
+  const { jobs: held } = await riderCall(base, rider, 'GET', '/rider/jobs/active');
+  for (const stale of held) {
+    if (stale.status === 'ASSIGNED') {
+      await pluginCall(base, secret, 'POST', `/jobs/${stale.id}/cancel`, { reason: 'smoke test cleanup' });
+    } else {
+      await riderCall(base, rider, 'POST', `/rider/jobs/${stale.id}/failed`, { reason: 'OTHER', detail: 'smoke test cleanup' });
+      await riderCall(base, rider, 'POST', `/rider/jobs/${stale.id}/returned`, {});
+    }
+  }
+  if (held.length) log(`Cleared ${held.length} job(s) left over from an earlier run`);
+}
+
 // 4. The plugin creates a pay-on-delivery job for order 90001.
 const orderId = Number(process.env.ORDER_ID ?? Date.now() % 1_000_000);
 const created = await pluginCall(base, secret, 'POST', '/jobs', {
@@ -126,6 +145,21 @@ for (let i = 0; i < 15 && !code; i++) {
 }
 assert.ok(code, 'the delivery code SMS should be in the dev outbox');
 log('Buyer received the code by SMS (read from the dev outbox)');
+
+// The in-app copy must NOT carry the code.
+//
+// The marketplace app's inbox is filled by push notifications, so anything in
+// that body is readable on a locked screen by whoever is holding the phone —
+// which is the one thing the code exists to prevent. This asserts the property
+// rather than trusting the wording to stay right.
+{
+  const outbox = await riderCall(base, null, 'GET', '/dev/outbox');
+  const inbox = outbox.entries.find((e) => e.path === '/delivery/messages/inbox' && e.body?.jobId === jobId);
+  assert.ok(inbox, 'an in-app message should have been queued for a marketplace order');
+  assert.ok(!inbox.body.body.includes(code), 'the in-app message must not contain the delivery code');
+  assert.ok(!/\d{6}/.test(inbox.body.body), 'the in-app message must not contain any six-digit code');
+  log('In-app copy carries no code, only "check your SMS"');
+}
 
 // A wrong code is refused and reported only as "not matched".
 const wrong = await riderCall(base, rider, 'POST', `/rider/jobs/${jobId}/verify-code`, { code: code === '000000' ? '111111' : '000000' });

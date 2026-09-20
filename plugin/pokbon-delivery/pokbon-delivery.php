@@ -55,6 +55,7 @@ require_once POKBON_DELIVERY_DIR . 'includes/class-messages.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-payments.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-orders.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-rest.php';
+require_once POKBON_DELIVERY_DIR . 'includes/class-labels.php';
 
 if ( is_admin() ) {
 	require_once POKBON_DELIVERY_DIR . 'admin/class-admin.php';
@@ -70,6 +71,7 @@ Pokbon_Delivery_Migrations::bootstrap();
 add_action( 'rest_api_init', [ 'Pokbon_Delivery_REST', 'register_routes' ] );
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Orders', 'bootstrap' ], 20 );
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Payments', 'bootstrap' ], 20 );
+add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Labels', 'bootstrap' ], 20 );
 
 if ( is_admin() ) {
 	add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Admin', 'bootstrap' ], 20 );

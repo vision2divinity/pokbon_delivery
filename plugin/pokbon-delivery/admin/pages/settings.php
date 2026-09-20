@@ -131,6 +131,28 @@ $last_sync  = Pokbon_Delivery_Settings::last_sync();
 			</td>
 		</tr>
 		<tr>
+			<th scope="row">Wording at checkout</th>
+			<td>
+				<label>
+					<input name="rename_cod_label" type="checkbox" value="1"
+						<?php checked( ! empty( $settings['rename_cod_label'] ) ); ?>>
+					Call it &ldquo;Pay on delivery&rdquo; instead of &ldquo;Cash on delivery&rdquo;
+				</label>
+				<p class="description">
+					<strong>Turn this on the day the first rider goes out, not before.</strong>
+					Until riders exist there really is cash, and this wording would be a lie to every buyer.
+					After it, a buyer who chose &ldquo;cash&rdquo; and is asked for a mobile-money PIN at their own
+					front door is the most likely argument this product will cause.
+				</p>
+				<p class="description">
+					This covers the website checkout, every order email and the admin.
+					<strong>The mobile app carries its own copy and needs a release:</strong>
+					<?php echo esc_html( implode( ' and ', Pokbon_Delivery_Labels::app_files() ) ); ?>.
+					Ship that in the same week.
+				</p>
+			</td>
+		</tr>
+		<tr>
 			<th scope="row"><label for="pkbd-pickup-zone">Default pickup</label></th>
 			<td>
 				<select id="pkbd-pickup-zone" name="default_pickup_zone">
