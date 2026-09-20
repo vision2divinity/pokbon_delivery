@@ -103,7 +103,17 @@ Updated as work lands. Newest first.
     WordPress; `GET /dev/outbox` shows what would have been sent.
   - `packages/shared/src/lifecycle.ts` is the transition table. `packages/shared/src/settings.ts` is every
     tunable and its launch default. `apps/api/src/jobs/jobs.service.ts` is the only writer of job status.
-- **2026-09-20** — **The WordPress plugin `plugin/pokbon-delivery` is written and lints clean** (17 files).
+- **2026-09-20** — **The three known plugin gaps are closed.**
+  - The in-app copy now goes out as a real per-user push (`Pokbon_App_Push_Endpoint::send_to_user`), because the
+    app's inbox is filled by push rather than a server table. **The delivery code is kept out of it on both
+    sides** — a push body is readable on a locked screen — and the smoke test asserts that.
+  - Vendor pickup resolves from the vendor's own WCFM store location, then a curated pickup point, then the
+    configured default. Anything without coordinates in a served zone and a callable number is discarded.
+  - "Pay on delivery" wording is implemented across checkout, emails and admin, behind a setting that stays off
+    until the first rider goes out. The two app files that need the same change are named on the settings screen.
+  - The smoke test now clears jobs left by an earlier run and is repeatable. It earned its keep immediately: it
+    caught a stale API process still serving the previous build.
+- **2026-09-20** — **The WordPress plugin `plugin/pokbon-delivery` is written and lints clean** (18 files).
   Five admin screens (job board, riders, zones, price matrix, settings), the signed two-way contract, the
   doorstep Paystack mobile-money charge, and job creation when an order reaches processing. Read
   `plugin/pokbon-delivery/README.md`, which also lists the three known gaps rather than hiding them.

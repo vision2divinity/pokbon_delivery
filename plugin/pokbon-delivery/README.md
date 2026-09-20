@@ -42,7 +42,7 @@ All under `/wp-json/pokbon/v1/`, all requiring the service signature:
 
 ```
 POST delivery/messages/sms              relayed to Zenoph
-POST delivery/messages/inbox            see "Known gaps"
+POST delivery/messages/inbox            per-user push; never carries the code
 POST delivery/payment/prompt            Paystack mobile-money charge
 GET  delivery/payment/{intentId}        verified against Paystack, not just local state
 POST delivery/payment/{intentId}/link   pay-by-link by SMS
