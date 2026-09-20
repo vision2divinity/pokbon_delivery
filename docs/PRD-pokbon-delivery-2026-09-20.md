@@ -1,7 +1,8 @@
 # POKBON Delivery — Product Requirements, draft 2
 
-**2026-09-20 · supersedes `PRD-pokbon-delivery-2026-09-13.md` · for review, still not for build**
-Rewritten from Francis's brief of 2026-09-20, which corrected draft 1 on a central point.
+**2026-09-20 · draft 2, revised the same day after the owner's answers · supersedes the 2026-09-13 draft**
+Rewritten from Francis's brief of 2026-09-20, then revised again once he corrected the money model.
+Section 0a records what is now settled; every section it touches was rewritten, not appended to.
 
 ---
 
@@ -32,6 +33,21 @@ Do not share a database, a deployment, or a rider identity. If the dispatch core
 extract it as a package both services depend on — never as one service serving both.
 
 Everything else below is new or substantially rewritten.
+
+## 0a · Settled by the owner, 2026-09-20
+
+| # | Decision |
+|---|---|
+| 1 | **Vendors may onboard their own riders.** A delivery may be made by a POKBON rider or a vendor's rider, and the money flows differently in each case (§ 2, § 9) |
+| 2 | **Rider licence is mandatory.** No longer an open question |
+| 3 | **One job per vendor**, but a rider may hold more than one at a time if they choose, with a warning about late delivery (§ 6) |
+| 4 | **Standalone jobs are prepaid online**, before the rider collects (§ 9a) |
+| 5 | **Riders pay little or no commission** at launch; the requester absorbs the platform fee. Riders own the bike, the fuel and the maintenance (§ 9) |
+| 6 | **Failed COD: goods return to the vendor.** Rider compensation deferred, to be settled before enrolment (§ 11) |
+| 7 | **Background location** accepted as solvable; a policy page will be produced (§ 14) |
+| 8 | **Data protection** to be worked through separately — but it gates NIA access, see § 4a |
+
+Still open: § 17.
 
 ---
 
@@ -64,12 +80,32 @@ commission on a sale POKBON cannot see settle. The 1.20 commission engine alread
 problem — netting was made mandatory specifically because, in the code's own words, a vendor sits on COD cash —
 but netting is a mitigation. It recovers the debt later, from future payouts, if there are future payouts.
 
-Put a POKBON rider in the middle and the money flows the right way round. **The rider collects the cash, so
-POKBON holds it, nets its commission, and remits the remainder to the vendor.** The debt never forms. A vendor
-who never sells again still cannot walk away owing, because the money was never theirs to hold.
+Delivery fixes this, but there are **two different strengths of fix**, and the model as described currently
+chooses the weaker one. Both are legitimate. The difference should be a decision rather than an accident.
 
-That single change converts the weakest part of the marketplace's economics into its most reliable part, and it
-is only possible if POKBON controls delivery.
+**Visibility.** The rider confirms delivery, or the buyer confirms receipt, so POKBON knows the sale completed,
+which vendor owes, and how much. The claim becomes evidenced instead of disputed. The vendor still ends up
+holding the cash, so POKBON still chases — but now with proof.
+
+**Custody.** The rider remits the item cash to POKBON, which nets commission and pays the vendor the rest. The
+debt never forms. A vendor who never sells again cannot walk away owing, because the money was never theirs.
+
+Custody is much stronger and is the only version that removes the problem rather than documenting it. It is
+also the one vendors will resist, and it is impossible when a **vendor's own rider** delivers, because POKBON
+never touches that money.
+
+**Recommendation: support both, per job.**
+
+| Who delivers | Cash custody | What POKBON gets |
+|---|---|---|
+| POKBON rider | POKBON holds item cash, nets commission, remits to vendor | The debt never forms |
+| Vendor's own rider | Vendor holds the cash | Proof of delivery, an evidenced claim |
+
+Store it on the job as `cashCustody: pokbon` or `vendor`. Settlement, reconciliation and what the vendor sees
+all follow from that one field. Without it the two cases blur and reconciliation becomes guesswork.
+
+Either way delivery makes the marketplace's weakest economics measurable, which is only possible if POKBON
+controls delivery.
 
 The secondary reasons still stand: delivery cost becomes a measured number instead of an estimate, which the
 commission engine needs for true margin; "where is my order" calls stop; and the standalone service creates
@@ -113,14 +149,36 @@ contacts them with questions → approved → can go on duty.
 | Selfie / profile photo | Mandatory | Shown to buyers; also the anti-substitution check |
 | Next of kin or guarantor | Recommended | Matters when cash goes missing |
 
-**The licence should be mandatory, not optional.** The brief was unsure. Make it required for anyone on a
-motorbike, tricycle or car. An unlicensed rider carrying POKBON-branded goods makes POKBON the deep pocket in
-any accident, and "we did not ask" is a worse position than "they gave us a licence that turned out to be
-false". Make it optional only for a bicycle or on-foot tier, if one ever exists.
+**The licence is mandatory** (owner, 2026-09-20), for anyone on a motorbike, tricycle or car. An unlicensed
+rider carrying POKBON-branded goods makes POKBON the deep pocket in any accident, and "we did not ask" is a
+worse position than "they gave us one that turned out to be false".
 
-**Collecting an ID is not verifying one.** Decide explicitly whether the Ghana Card is checked against the NIA
-database or merely photographed. If merely photographed, say so internally and price the risk, rather than
-letting an unverified image feel like verification.
+#### Verifying the Ghana Card — what is actually available
+
+Researched 2026-09-20. **Collecting an ID is not verifying one**, and there are three distinct levels:
+
+| Level | What it proves | Availability to POKBON |
+|---|---|---|
+| Photograph / OCR | Text was extracted from something card-shaped | Immediate, and **not verification** |
+| NFC chip read | The card is genuine and unaltered, by cryptographic signature | Buildable now; Ghana Cards carry an NFC chip and most Android phones can read it |
+| NIA Identity Verification System | The person exists in the national register | Contract required, see below |
+
+**The NIA route is real but gated.** NIA runs an Identity Verification System already used at scale by banks
+and telcos. It is not self-serve: an institution emails `idverification@nia.gov.gh`, supplies business
+registration, **a data protection certificate**, an SSNIT certificate and a business profile, then meets NIA,
+sets up technical infrastructure and executes a contract before access is granted. No public pricing.
+
+Two consequences worth acting on now:
+
+1. **Data protection registration is a prerequisite, not a nicety.** § 14 lists it as a legal obligation; it is
+   also the gate to NIA. Start it early, because it blocks the verification POKBON actually wants.
+2. **Apply early, build the interim.** The contract process will take longer than the build. In the meantime,
+   NFC chip validation plus a selfie-to-card face match gets most of the value: the card is provably genuine and
+   the holder provably resembles it. That is far stronger than a photograph and available without anyone's
+   permission.
+
+Do not let an OCR extraction be recorded in the admin as "verified". Store the level explicitly
+(`photo`, `nfc`, `nia`) so nobody later mistakes a scan for a check.
 
 **Account sharing is the failure nobody plans for.** One person registers, their cousin rides. Cheap
 mitigations: a selfie check when going on duty after a period offline, the rider's photo shown to the buyer,
@@ -164,11 +222,20 @@ haulage has different insurance, different loading time and different failure mo
   work.
 - Dispatcher can assign manually and override anything. On day one, manual assignment is the whole system.
 
-**Multi-vendor orders need an explicit answer.** The marketplace already supports orders spanning vendors; the
-commission engine reasons about `required_vendor_ids` per order. A single order with items from two vendors is
-either two pickups on one job, or two jobs against one order. Recommendation: **one job per vendor**, because a
-single rider routing between two shops doubles the failure surface and makes partial delivery unrepresentable.
-The buyer sees one order with two deliveries, which is honest.
+**Multi-vendor orders: one job per vendor** (owner, 2026-09-20). The marketplace already supports orders
+spanning vendors and the commission engine reasons about `required_vendor_ids` per order. One job per vendor
+keeps partial delivery representable; the buyer sees one order with two deliveries, which is honest.
+
+**A rider may hold more than one job at a time**, by choice. Show the available jobs and let them decide. Two
+rules make this safe rather than chaotic:
+
+- **Warn at the moment of the second acceptance**, naming the risk plainly: both deliveries are now late if
+  either goes wrong, and lateness affects their rating and their job offers.
+- **Cap concurrency** by tenure and rating rather than leaving it unbounded. A new rider holding four jobs is
+  four unhappy buyers.
+
+Do not auto-batch or auto-route multi-job riders in phase 1. Let them choose and observe what they actually do
+before optimising a behaviour nobody has measured yet.
 
 ## 7 · The delivery lifecycle
 
@@ -214,29 +281,67 @@ Rules:
   drops constantly and a poll degrades where a socket needs reconnection logic.
 - In-app notification on each status change, through the existing push and inbox.
 
-## 9 · Pricing and commission
+## 9 · Pricing, and who pays whom
 
-POKBON owns no vehicles, so pricing must leave the rider clearly better off or supply evaporates.
+POKBON owns no bikes, buys no fuel and pays no maintenance. The owner's position is that riders carry little or
+no commission at launch and the **requester or buyer absorbs the platform fee**. That is the right instinct for
+a network that must attract supply before demand, and it is built into the model below.
 
-**Structure:** base fare by vehicle class + per-kilometre rate on the **routed** distance + waiting time beyond
-a free allowance, with a **minimum fare**. The minimum matters most: a two-kilometre delivery through Accra
-traffic can take forty minutes, and a purely distance-based fee makes short urban jobs the worst-paid work on
-the platform, which is exactly the work there is most of.
+### 9a · Standalone courier jobs — prepaid
 
-**Commission:** take a percentage of the delivery fee, not of the goods value. Start low, 10 to 15 percent, and
-say plainly what it buys: order flow, payment handling and dispute cover. POKBON is not supplying the vehicle,
-the fuel or the labour, and a commission that ignores that gets riders leaving for direct arrangements with the
-same vendors they meet on the platform. **Disintermediation is the main commercial risk in this model**, and
-the defence is job density and reliable fast payout, not contract terms.
+1. Requester enters pickup and drop-off and sees **distance and price before committing**.
+2. They confirm and **pay online first**, through the payment methods the marketplace already supports.
+3. Nearby riders see the request, the fee, the destination and the distance, and accept or decline.
+4. On confirmed delivery the rider's earning is released.
 
-**Who pays the delivery fee** on a marketplace order — buyer, vendor, or split — is a business decision that is
-not yet made and should be, because it changes the checkout.
+Because the job is prepaid, POKBON holds the money from the start. No cash risk, no chasing. **This is the
+cleanest money flow in the product and should ship before COD.**
 
-**Record four numbers on every job**: quoted price, routed distance, rider payout, and any gateway fee. Without
-all four, a profitable route cannot be told from a subsidised one.
+Price = base fare by vehicle class + per-kilometre on the **routed** distance + waiting time beyond a free
+allowance, with a **minimum fare**. The minimum matters most: two kilometres through Accra traffic can take
+forty minutes, and pure distance pricing makes short urban jobs the worst-paid work on the platform, which is
+exactly the work there is most of.
 
-**Tips:** simplest is cash, or added to the COD amount. Anything else means a second payment flow. Never let a
-tip be a condition of the code being accepted.
+POKBON's revenue is a **service fee added on top of the rider's fee and shown to the requester**, not a cut
+taken out of the rider's earning. Identical arithmetic, completely different message: the rider sees the full
+fee they earned and the requester sees what the platform costs. Riders leave platforms that appear to shave
+their earnings, and they compare notes with each other.
+
+### 9b · Marketplace orders
+
+The delivery fee is charged to the buyer and **passes to the rider**.
+
+- **Paid online.** POKBON already holds everything. Commission is netted at settlement and the rider is paid.
+- **Cash on delivery.** The rider collects **item price + delivery fee** as one amount, which then splits:
+  - the **delivery fee is the rider's**, kept immediately;
+  - the **item money** goes to POKBON (custody) or the vendor (visibility), per § 2.
+
+**Rider earnings are released on confirmed delivery**, so the delivery code is not only proof for the buyer, it
+is the trigger for the rider being paid. Keep that alignment: it makes the rider want the code entered properly.
+
+**When a vendor's own rider delivers, POKBON pays that rider nothing** — the vendor does. POKBON's interest is
+the commission on the sale and the proof that the sale completed.
+
+### 9c · Record on every job
+
+Quoted fee, routed distance, rider earning, platform service fee, gateway fee, cash collected, and
+`cashCustody`. Without all of these a profitable route cannot be told from a subsidised one, and COD cannot be
+reconciled at all.
+
+### 9d · The risk in taking nothing from riders
+
+Charging riders nothing wins supply, and it makes **the requester-side fee the entire business**. Set it too low
+to win demand and the platform loses money on volume it cannot easily reduce. Decide a target margin per job
+early and watch it per route, not in aggregate.
+
+Raising rider commission later is far harder than starting modest and holding. If riders will ever be charged,
+say so at enrolment rather than introducing it in month six.
+
+### 9e · Tips
+
+Cash is simplest, or added to the COD amount. Anything else is a second payment flow. **A tip must never be a
+condition of the code being accepted**, and the app must not nag — tipping pressure is the fastest way to make
+a delivery feel unpleasant.
 
 ## 10 · Payouts
 
@@ -246,24 +351,30 @@ including request, approval, reference capture and rejection-rollback; reuse tho
 **Decide employee versus contractor before launch.** It changes tax, insurance and how much control can be
 exerted over working hours, and it is painful to reverse once hundreds of riders are onboarded.
 
-## 11 · Cash handling — the risk that § 2 creates
+## 11 · Cash handling
 
-Putting riders in the COD path solves the vendor commission problem by moving the cash risk onto riders. That
-trade is worth making, but only with controls designed in from the start.
+Cash risk exists **only on COD marketplace orders where a POKBON rider takes custody** (§ 2). Standalone jobs
+are prepaid and carry none, which is another reason to ship those first.
 
-- **Per-rider outstanding cash cap.** Above it, no new COD jobs are offered. Prepaid jobs still flow.
-- **Daily remittance**, with the outstanding balance visible to the rider at all times.
-- **Cap by tenure.** A rider in week one carries far less than one in month six.
-- **Declared-value cap per job**, so no single delivery can lose more than the business can absorb.
-- **Reconciliation in the admin plugin**: what was collected, what was remitted, what is outstanding, per rider
-  and per day.
-- **A written policy for loss** — deposit, guarantor, or absorbed — decided before the first cedi is collected,
-  not after the first loss.
+- **Per-rider outstanding cash cap.** Above it no new COD jobs are offered; prepaid jobs keep flowing.
+- **The cap rises with tenure.** Week one carries far less than month six.
+- **Daily remittance**, with the outstanding balance always visible to the rider in the app.
+- **Declared-value cap per job**, so no single delivery loses more than the business can absorb.
+- **Reconciliation in the admin plugin**: collected, remitted, outstanding — per rider, per day.
+- **A written policy for loss** — deposit, guarantor or absorbed — decided before the first cedi is collected.
 
-**Failed COD delivery needs an explicit rule.** If the buyer refuses the goods, the rider has made the trip and
-the vendor has lost a sale. Who pays the rider? Recommendation: POKBON pays a reduced failed-delivery fee and
-recovers it from whichever party caused the failure, because leaving the rider unpaid for a trip they completed
-correctly is the fastest way to lose riders.
+**Note the asymmetry the split creates.** The rider keeps the delivery fee immediately but owes POKBON the item
+money, so a rider who absconds keeps both. The cash cap is the only thing bounding that loss, and it should be
+set against what the business can lose in a week rather than what feels generous to a good rider.
+
+### Failed COD delivery
+
+Settled in principle: **the goods return to the vendor.** What the rider is paid for a trip they completed
+correctly is deferred, to be communicated at enrolment rather than discovered later.
+
+Worth flagging once more because it decides rider trust: a rider who rides to Lapaz, finds nobody home and
+rides back to Adenta for nothing will not take the next COD job. Whatever the figure is, it should be non-zero,
+known in advance, and paid automatically rather than on appeal.
 
 ## 12 · The admin plugin (WordPress)
 
@@ -295,26 +406,44 @@ coordinates is permanently unroutable, and the backlog grows daily.
 
 ## 14 · Things the brief did not mention that will bite
 
-1. **Background location is the hardest technical problem in the app.** Android kills background location
-   aggressively, and Google Play requires a specific declaration, a privacy-policy URL and usually a demo video
-   for any app requesting it. This has delayed other people's releases by weeks. Plan it as a schedule item,
-   not a checkbox.
+1. **Background location.** The owner is content this is solvable and will produce the policy page, which is
+   the right call — but keep it on the release checklist, not the backlog. Google Play requires a specific
+   declaration, a reachable privacy-policy URL and usually a short demo video showing why the app needs
+   location while backgrounded. The engineering is routine; the review step is what has delayed other people's
+   releases, so submit it with the first build that requests the permission rather than discovering it at
+   launch.
 2. **Offline behaviour.** Status updates, photos and cash entries must queue locally and sync. A rider in a
    basement stockroom must still be able to mark a pickup.
 3. **Battery and data cost.** Riders pay for both. Ping sparingly, batch when offline, and be able to state
    what the app costs a rider per day. This affects adoption more than any feature.
 4. **Trust and safety.** An SOS control for riders, and the ability to share a trip with a contact.
 5. **Insurance.** Commercial goods carriage on a motorbike. Confirm what exists and what POKBON must hold.
-6. **Data protection.** Ghana Cards, selfies, phone numbers and live location make POKBON a data controller
-   under Act 843. Registration with the Data Protection Commission, a retention schedule, encryption of ID
-   images, and a policy on who in admin can view an ID. **Location history is the sensitive one** — decide how
-   long rider tracks are kept and why.
-7. **Existing website services overlap.** `buyforme.php`, `payforme.php` and `localservice.php` already promise
+6. **Data protection — and it blocks NIA.** Ghana Cards, selfies, phone numbers and live location make POKBON
+   a data controller under Act 843: registration with the Data Protection Commission, a retention schedule,
+   encryption of ID images, and a policy on who in admin may view an ID. **This is now on the critical path**,
+   because NIA requires a data protection certificate before granting verification access (§ 4a). **Location
+   history is the sensitive one** — decide how long rider tracks are kept, and why.
+7. **The disintermediation guardrail needs care.** The proposed rule — watch a rider who delivers to the same
+   person three or more times, then route new requests elsewhere — catches the right behaviour but also catches
+   the most valuable normal behaviour there is: an office that orders lunch daily, a shop with a regular
+   supplier, a customer who simply lives on a rider's route. In a thin market the same pair will recur
+   constantly with nothing wrong.
+
+   Use it as a **signal to review, not an automatic reroute.** Auto-rerouting punishes a rider for being
+   convenient and degrades service for the customer, and neither of them did anything wrong. Flag the pair,
+   look at it, and act only if something else corroborates — jobs cancelled after acceptance, or a vendor whose
+   marketplace volume falls while their rider's activity does not.
+
+   The honest position is that the real defence is job density and fast reliable payout. A rider with steady
+   work and same-day money has little reason to go around the platform; a rider with sparse work and slow
+   payout will, whatever the rules say.
+
+8. **Existing website services overlap.** `buyforme.php`, `payforme.php` and `localservice.php` already promise
    delivery-shaped things with no fulfilment. Decide whether they become Delivery jobs or are retired; leaving
    both is how customers end up with two ways to ask for the same thing and two answers.
-8. **Play Store policy.** Two roles in one binary is fine, but a rider-facing app collecting IDs will draw
+9. **Play Store policy.** Two roles in one binary is fine, but a rider-facing app collecting IDs will draw
    scrutiny. Keep requester mode the default face of the app.
-9. **Do not show marketplace products in the Delivery app in phase 1.** The brief already leaned this way and
+10. **Do not show marketplace products in the Delivery app in phase 1.** The brief already leaned this way and
    the instinct is right. It doubles the app's surface and halves its clarity for the one audience that must
    love it.
 
@@ -349,13 +478,19 @@ Deliberately absent: total deliveries. It rises when you spend more and tells yo
 
 ## 17 · Open decisions
 
-1. Riders: employees or contractors.
-2. Who pays the delivery fee on a marketplace order — buyer, vendor or split.
-3. Is the Ghana Card verified against NIA, or only photographed.
-4. First coverage area.
-5. Cash cap, and who absorbs a loss.
-6. Whether the existing website delivery services fold into this or retire.
-7. What deliveries currently cost POKBON, if that number exists anywhere. It should anchor § 9.
+1. **Riders: employees or contractors.** Changes tax, insurance and how much control can be exerted.
+2. **Visibility or custody of COD item cash** (§ 2). The single biggest lever on whether the commission problem
+   is removed or merely documented.
+3. **The platform service fee on standalone jobs.** With riders paying nothing, this is the entire business
+   (§ 9d).
+4. **What a rider is paid for a failed COD delivery** (§ 11). Deferred, but must be settled before enrolment.
+5. **Per-rider cash cap, and who absorbs a loss** — deposit, guarantor, or the business.
+6. **First coverage area.**
+7. **Whether the existing website delivery services** (`buyforme`, `payforme`, `localservice`) fold into this
+   or retire.
+8. **What deliveries currently cost POKBON**, if that number exists anywhere. It should anchor § 9.
+
+Settled since draft 2 was first written: § 0a.
 
 ---
 
