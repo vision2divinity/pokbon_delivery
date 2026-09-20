@@ -40,6 +40,7 @@ class Pokbon_Delivery_Admin {
 			self::SLUG . '-riders'  => [ 'Riders', 'render_riders' ],
 			self::SLUG . '-zones'   => [ 'Zones', 'render_zones' ],
 			self::SLUG . '-matrix'  => [ 'Price matrix', 'render_matrix' ],
+			self::SLUG . '-brand'   => [ 'Brand & app', 'render_brand' ],
 			self::SLUG . '-settings' => [ 'Settings', 'render_settings' ],
 		];
 
@@ -369,6 +370,38 @@ class Pokbon_Delivery_Admin {
 				}
 				break;
 
+			case 'save_app_config':
+				$posted = isset( $_POST['cfg'] ) ? wp_unslash( $_POST['cfg'] ) : [];
+				if ( ! is_array( $posted ) ) {
+					$error = 'Nothing to save.';
+					break;
+				}
+
+				$posted = self::decode_json_leaves( $posted );
+				if ( $posted === null ) {
+					$error = 'One of the JSON boxes is not valid JSON, so nothing was saved. Fix it and save again.';
+					break;
+				}
+
+				// Store only what differs from the shipped default, so a later
+				// improvement to everything else still reaches this install.
+				$diff = self::diff_against( $posted, Pokbon_Delivery_App_Config::defaults() );
+				Pokbon_Delivery_App_Config::save_overrides( $diff );
+
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_APP_CONFIG_SAVED, [
+					'changed' => count( $diff, COUNT_RECURSIVE ),
+				] );
+				$notice = empty( $diff )
+					? 'Saved. Everything matches the defaults, so nothing is overridden.'
+					: 'Saved and published. Riders pick this up on their next launch.';
+				break;
+
+			case 'reset_app_config':
+				Pokbon_Delivery_App_Config::save_overrides( [] );
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_APP_CONFIG_SAVED, [ 'reset' => true ] );
+				$notice = 'Every value is back to the shipped default.';
+				break;
+
 			default:
 				$error = 'Unknown action.';
 		}
@@ -380,6 +413,85 @@ class Pokbon_Delivery_Admin {
 
 		wp_safe_redirect( $redirect );
 		exit;
+	}
+
+	/**
+	 * Turn the JSON textareas back into arrays.
+	 *
+	 * Returns null on the first thing that is not valid JSON, so a typo in one
+	 * box does not silently wipe a list. Half-saving structure is worse than
+	 * refusing to save at all.
+	 */
+	private static function decode_json_leaves( array $node ) {
+		foreach ( $node as $key => $value ) {
+			if ( ! is_array( $value ) ) {
+				continue;
+			}
+			if ( array_key_exists( '__json', $value ) ) {
+				$decoded = json_decode( (string) $value['__json'], true );
+				if ( ! is_array( $decoded ) ) {
+					return null;
+				}
+				$node[ $key ] = $decoded;
+				continue;
+			}
+			$child = self::decode_json_leaves( $value );
+			if ( $child === null ) {
+				return null;
+			}
+			$node[ $key ] = $child;
+		}
+		return $node;
+	}
+
+	/**
+	 * Keep only the leaves that differ from the default.
+	 *
+	 * Checkboxes post "1"/"0" and numbers post as strings, so values are
+	 * compared after being cast to the default's own type — otherwise every
+	 * boolean and every number would look "changed" on the first save and the
+	 * override store would fill up with copies of the defaults.
+	 */
+	private static function diff_against( array $posted, array $defaults ): array {
+		$diff = [];
+
+		foreach ( $posted as $key => $value ) {
+			if ( ! array_key_exists( $key, $defaults ) ) {
+				continue; // Ignore anything not in the shipped shape.
+			}
+			$default = $defaults[ $key ];
+
+			if ( is_array( $default ) && is_array( $value ) && ! Pokbon_Delivery_App_Config::is_list( $default ) ) {
+				$child = self::diff_against( $value, $default );
+				if ( ! empty( $child ) ) {
+					$diff[ $key ] = $child;
+				}
+				continue;
+			}
+
+			if ( is_array( $default ) ) {
+				if ( wp_json_encode( $value ) !== wp_json_encode( $default ) ) {
+					$diff[ $key ] = $value;
+				}
+				continue;
+			}
+
+			if ( is_bool( $default ) ) {
+				$cast = (bool) $value;
+			} elseif ( is_int( $default ) ) {
+				$cast = (int) $value;
+			} elseif ( is_float( $default ) ) {
+				$cast = (float) $value;
+			} else {
+				$cast = sanitize_text_field( (string) $value );
+			}
+
+			if ( $cast !== $default ) {
+				$diff[ $key ] = $cast;
+			}
+		}
+
+		return $diff;
 	}
 
 	// ─── shared rendering ───────────────────────────────────────────────────
@@ -469,6 +581,10 @@ class Pokbon_Delivery_Admin {
 
 	public static function render_matrix(): void {
 		require POKBON_DELIVERY_DIR . 'admin/pages/matrix.php';
+	}
+
+	public static function render_brand(): void {
+		require POKBON_DELIVERY_DIR . 'admin/pages/brand.php';
 	}
 
 	public static function render_settings(): void {

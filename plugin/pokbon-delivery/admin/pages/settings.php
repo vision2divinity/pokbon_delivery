@@ -57,12 +57,25 @@ $last_sync  = Pokbon_Delivery_Settings::last_sync();
 			</td>
 		</tr>
 	</table>
+	<p><button type="submit" class="button button-primary">Save connection</button></p>
+	</form>
+
+	<?php
+	/**
+	 * These two live OUTSIDE the form above, and must stay outside.
+	 *
+	 * `Pokbon_Delivery_Admin::button()` renders its own <form>. HTML has no
+	 * nested forms: the browser silently merges an inner one into the outer,
+	 * so both `pokbon_action` fields end up in the same submission and PHP
+	 * takes the last. Putting these inside meant "Save connection" quietly ran
+	 * the connection test and never saved anything — which is exactly what it
+	 * did on the first real install.
+	 */
+	?>
 	<p>
-		<button type="submit" class="button button-primary">Save connection</button>
 		<?php echo Pokbon_Delivery_Admin::button( 'test_api', 'Test the connection' ); ?>
 		<?php echo Pokbon_Delivery_Admin::button( 'push_sync', 'Push zones, prices and settings' ); ?>
 	</p>
-	</form>
 
 	<?php if ( ! empty( $last_sync['synced_at'] ) ) : ?>
 		<p class="description">

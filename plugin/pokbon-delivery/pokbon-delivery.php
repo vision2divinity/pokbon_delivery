@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,19 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.2.0 — the backend-first layer, and one real bug found on the first install:
+ *   - NESTED FORMS FIXED. The Test and Push buttons sat inside the Save form.
+ *     HTML has no nested forms, so the browser merged them and PHP took the
+ *     last `pokbon_action` — "Save connection" quietly ran the connection test
+ *     and saved nothing, with no error anywhere. `scripts/check-plugin-forms.mjs`
+ *     now fails the build on this whole class of mistake.
+ *   - NEW: Brand & app. Colours, every word a rider reads, feature toggles and
+ *     the home screen are edited in wp-admin and served to the rider app at
+ *     /wp-json/pokbon/v1/delivery/app-config. Changing a label is an admin
+ *     edit, not an app release.
+ *   - The theme ships as the marketplace app's own audited tokens, so both
+ *     apps are one brand rather than two palettes that drift.
+ *   - PHP 7.4 safe: array_is_list() (8.1) replaced with an explicit helper.
  * 0.1.0 — first cut. Zones, the price matrix, the settings that must never be
  *   hardcoded, the signed two-way contract with the Delivery API, the doorstep
  *   Paystack mobile-money charge, job creation when an order reaches
@@ -56,6 +69,7 @@ require_once POKBON_DELIVERY_DIR . 'includes/class-payments.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-orders.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-rest.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-labels.php';
+require_once POKBON_DELIVERY_DIR . 'includes/class-app-config.php';
 
 if ( is_admin() ) {
 	require_once POKBON_DELIVERY_DIR . 'admin/class-admin.php';
@@ -69,6 +83,7 @@ register_activation_hook( __FILE__, [ 'Pokbon_Delivery_Migrations', 'run' ] );
 Pokbon_Delivery_Migrations::bootstrap();
 
 add_action( 'rest_api_init', [ 'Pokbon_Delivery_REST', 'register_routes' ] );
+add_action( 'rest_api_init', [ 'Pokbon_Delivery_App_Config', 'register_routes' ] );
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Orders', 'bootstrap' ], 20 );
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Payments', 'bootstrap' ], 20 );
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Labels', 'bootstrap' ], 20 );

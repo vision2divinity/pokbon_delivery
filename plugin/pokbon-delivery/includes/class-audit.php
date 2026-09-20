@@ -18,6 +18,7 @@ class Pokbon_Delivery_Audit {
 	const EVENT_SETTINGS_SAVED   = 'delivery.settings_saved';
 	const EVENT_API_SAVED        = 'delivery.api_saved';
 	const EVENT_SYNC_PUSHED      = 'delivery.sync_pushed';
+	const EVENT_APP_CONFIG_SAVED = 'delivery.app_config_saved';
 
 	const EVENT_RIDER_DECISION   = 'delivery.rider_decision';
 	const EVENT_JOB_ASSIGNED     = 'delivery.job_assigned';
