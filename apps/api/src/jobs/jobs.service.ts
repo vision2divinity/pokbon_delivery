@@ -578,6 +578,48 @@ export class JobsService {
     });
   }
 
+  /**
+   * Ask the plugin whether a pending payment has landed yet.
+   *
+   * Payment normally reaches here by webhook: Paystack tells the site, the
+   * site marks the order paid, and the plugin reports it. When that chain is
+   * slow or broken nothing else looks until the payment window closes minutes
+   * later — and then marks it failed, with a rider standing at a door and the
+   * customer's money already gone.
+   *
+   * So the rider's own screen can settle it. Throttled to once every ten
+   * seconds per job: the screen refreshes every five, and each call is a
+   * round trip to WordPress and on to Paystack.
+   */
+  private readonly lastPaymentCheck = new Map<string, number>();
+
+  async refreshPaymentIfPending(job: Job): Promise<Job> {
+    if (job.status !== JobStatus.PAYMENT_PENDING || !job.paymentIntentId) return job;
+    if (this.plugin.isConsole) return job;
+
+    const last = this.lastPaymentCheck.get(job.id) ?? 0;
+    if (Date.now() - last < 10_000) return job;
+    this.lastPaymentCheck.set(job.id, Date.now());
+
+    try {
+      const status = await this.plugin.paymentStatus(job.paymentIntentId);
+      if (status.status !== 'paid') return job;
+
+      await this.paymentOutcome(
+        job.id,
+        { intentId: job.paymentIntentId, status: 'paid', reference: status.reference, paidAt: status.paidAt },
+        'rider-check',
+      );
+      this.logger.log(`Job ${job.id}: payment confirmed by the rider's own refresh, ahead of the webhook`);
+      return this.mustFind(job.id);
+    } catch (error) {
+      // Not worth failing the screen over: the rider still sees the job, and
+      // the sweep and the webhook both remain.
+      this.logger.warn(`Payment check failed for job ${job.id}: ${String(error)}`);
+      return job;
+    }
+  }
+
   /** Payment window closed with no answer. Called by the scheduler. */
   async expireStalePayments(): Promise<number> {
     const waitMinutes = this.settings.get('payment_wait_minutes');

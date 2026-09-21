@@ -66,7 +66,9 @@ export class RiderJobsController {
 
   @Get(':id')
   async one(@CurrentRider('sub') riderId: string, @Param('id') id: string) {
-    const job = await this.jobs.mustOwn(id, riderId);
+    // A rider refreshing a job whose payment is pending is asking the one
+    // question this endpoint can answer authoritatively, so ask it.
+    const job = await this.jobs.refreshPaymentIfPending(await this.jobs.mustOwn(id, riderId));
     const photos = await this.prisma.jobPhoto.findMany({ where: { jobId: id }, orderBy: { createdAt: 'asc' } });
     return toRiderJobView(job, { photos });
   }

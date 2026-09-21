@@ -144,6 +144,11 @@ export class RidersService {
       create: { riderId, lat, lng, accuracy: accuracy !== undefined ? Math.round(accuracy) : null },
       update: { lat, lng, accuracy: accuracy !== undefined ? Math.round(accuracy) : null },
     });
+    // A rider reporting their position has plainly been seen. lastSeenAt was
+    // only written at sign-in, so the roster showed somebody who had been
+    // pinging every minute as last seen six hours ago — which is precisely
+    // the kind of thing a dispatcher would act on.
+    await this.prisma.rider.update({ where: { id: riderId }, data: { lastSeenAt: new Date() } });
     return { accepted: true };
   }
 

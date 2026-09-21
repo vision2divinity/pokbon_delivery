@@ -43,25 +43,53 @@ export class DispatchService {
     if (live > 0) return null;
 
     const depth = this.settings.get('offer_cascade_depth');
-    const tried = await this.prisma.jobOffer.findMany({ where: { jobId }, select: { riderId: true, sequence: true } });
-    if (tried.length >= depth) {
+    const tried = await this.prisma.jobOffer.findMany({ where: { jobId }, select: { riderId: true, sequence: true, status: true } });
+
+    /*
+     * "They never answered" is not "they said no".
+     *
+     * Every previous offer used to bar its rider from seeing this job again,
+     * which is right while the cascade is walking down a list — the point is
+     * to reach somebody else. It is wrong afterwards. An offer lapses because
+     * the rider was riding, or their signal dropped, or the window is forty
+     * five seconds long; they never saw it. On a small roster that left the
+     * one available rider permanently locked out of a job, and the dispatcher
+     * pressing Offer again was told "nobody eligible" with a rider sitting on
+     * duty a kilometre from the pickup.
+     *
+     * A decline stands: that rider looked at the work and refused it, and
+     * pushing it back at them is how you lose riders. A lapse does not.
+     */
+    const refused = tried
+      .filter((offer) => offer.status === OfferStatus.DECLINED)
+      .map((offer) => offer.riderId);
+    /*
+     * Depth counts riders, not attempts.
+     *
+     * It is "how far down the list do we walk before a human should look at
+     * this", and now that a lapsed offer can go back to the same rider, three
+     * retries to one rider is not three riders. Counting attempts would send
+     * a job to UNFULFILLED while most of the roster had never seen it.
+     */
+    const ridersTried = new Set(tried.map((offer) => offer.riderId)).size;
+    if (ridersTried >= depth) {
       if (job.status !== JobStatus.UNFULFILLED) {
         await this.prisma.$transaction(async (tx) => {
           await tx.job.updateMany({ where: { id: jobId, status: job.status }, data: { status: JobStatus.UNFULFILLED } });
-          await tx.jobEvent.create({ data: { jobId, type: 'status.unfulfilled', actor, detail: { tried: tried.length } } });
+          await tx.jobEvent.create({ data: { jobId, type: 'status.unfulfilled', actor, detail: { ridersTried, offers: tried.length } } });
           await this.outbox.enqueue('job.status', { jobId, orderId: job.externalRef, source: job.source, status: 'unfulfilled', at: new Date().toISOString() }, tx);
         });
-        this.logger.warn(`Job ${jobId} unfulfilled after ${tried.length} offers — dispatcher must act`);
+        this.logger.warn(`Job ${jobId} unfulfilled after ${ridersTried} rider(s), ${tried.length} offer(s) — dispatcher must act`);
       }
       return null;
     }
 
-    const candidate = await this.pickCandidate(job, tried.map((t) => t.riderId));
+    const candidate = await this.pickCandidate(job, refused);
     if (!candidate) {
       if (job.status !== JobStatus.UNFULFILLED) {
         await this.prisma.$transaction(async (tx) => {
           await tx.job.updateMany({ where: { id: jobId, status: job.status }, data: { status: JobStatus.UNFULFILLED } });
-          await tx.jobEvent.create({ data: { jobId, type: 'status.unfulfilled', actor, detail: { reason: 'no_candidates', tried: tried.length } } });
+          await tx.jobEvent.create({ data: { jobId, type: 'status.unfulfilled', actor, detail: { reason: 'no_candidates', ridersTried, offers: tried.length } } });
           await this.outbox.enqueue('job.status', { jobId, orderId: job.externalRef, source: job.source, status: 'unfulfilled', at: new Date().toISOString() }, tx);
         });
         this.logger.warn(`Job ${jobId}: nobody eligible to offer to`);
@@ -73,13 +101,36 @@ export class DispatchService {
     const sequence = (tried.reduce((m, t) => Math.max(m, t.sequence), 0) || 0) + 1;
 
     return this.prisma.$transaction(async (tx) => {
-      const offer = await tx.jobOffer.create({
-        data: {
+      /*
+       * Upsert, because a rider gets one offer row per job.
+       *
+       * The unique key on (jobId, riderId) is the schema's version of the old
+       * rule that a rider only ever sees a job once, so simply allowing the
+       * re-offer above produced a constraint violation and a 500 in the
+       * dispatcher's face. A lapsed offer is revived rather than duplicated:
+       * same row, new window, next sequence number. The history of when it
+       * was offered lives in the job's event log, which is where a dispatcher
+       * looks anyway, so nothing is lost by reusing the row.
+       */
+      const offer = await tx.jobOffer.upsert({
+        where: { jobId_riderId: { jobId, riderId: candidate.riderId } },
+        create: {
           jobId,
           riderId: candidate.riderId,
           sequence,
           distanceMetres: candidate.distanceMetres,
           expiresAt: new Date(Date.now() + timeout * 1000),
+        },
+        update: {
+          sequence,
+          status: OfferStatus.OFFERED,
+          distanceMetres: candidate.distanceMetres,
+          offeredAt: new Date(),
+          expiresAt: new Date(Date.now() + timeout * 1000),
+          respondedAt: null,
+          // A previous decline cannot reach here — declines still bar the
+          // rider — but clearing it keeps the row honest about this offer.
+          declineReason: null,
         },
       });
       if (job.status !== JobStatus.OFFERED) {

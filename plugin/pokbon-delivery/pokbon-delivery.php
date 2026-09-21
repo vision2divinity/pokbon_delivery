@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.8
+ * Version:           0.4.9
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,14 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.9 — a customer who pays should not be shown a JSON error.
+ *   Paystack's dashboard had the Callback URL set to the webhook address, a
+ *   POST-only route, so the browser redirect after a successful payment
+ *   answered {"code":"rest_no_route"}. Somebody who has just handed over
+ *   money and been shown an error has no way to know it worked.
+ *   Payment links now carry their own callback_url — the order's own
+ *   received page — so this holds whatever the dashboard says. The dashboard
+ *   Callback URL should still be corrected; the Webhook URL was right.
  * 0.4.8 — read what Paystack said, and tell the customer how to pay.
  *   The charge reply carries data.status, which is the whole point of the
  *   call: pay_offline means a request reaches the handset and we wait, while

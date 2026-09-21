@@ -340,6 +340,17 @@ class Pokbon_Delivery_Payments {
 			'amount'    => (int) round( ( (float) $order->get_total() ) * 100 ),
 			'currency'  => self::currency(),
 			'reference' => $reference,
+			/*
+			 * Where the customer's browser lands after paying.
+			 *
+			 * Set here rather than left to the Paystack dashboard, because the
+			 * dashboard's Callback URL had been set to the webhook address —
+			 * a POST-only route — so every customer who paid was shown
+			 * {"code":"rest_no_route"} as their receipt. A person who has just
+			 * handed over money and been given a JSON error has no way to know
+			 * the payment worked.
+			 */
+			'callback_url' => $order->get_checkout_order_received_url(),
 			'metadata'  => [
 				'pokbon_delivery_job_id' => (string) $order->get_meta( self::META_JOB_ID ),
 				'pokbon_order_id'        => $order_id,
