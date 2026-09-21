@@ -189,6 +189,8 @@ $id_levels = [
 		For riders you recruit in person. They still sign in on the app with their own number and their own code —
 		they just find an account already waiting instead of an empty form. Adding somebody who has already signed
 		up updates their record rather than creating a second one, because the phone number is also how they log in.
+		<strong>A field you leave blank is left as it is</strong> — filling this in again to correct one detail will
+		not wipe the licence or next of kin somebody typed last week. To remove a detail, use the rider's own screen.
 	</p>
 
 	<?php Pokbon_Delivery_Admin::form_open( 'add_rider' ); ?>
@@ -278,7 +280,8 @@ $id_levels = [
 				</label>
 				<p class="description">
 					Recorded against your name and today's date. Leave it unticked and they accept it in the app
-					before their first shift — which is the safer default, not a delay.
+					before their first shift — which is the safer default, not a delay. Unticking it for somebody
+					who has already accepted does not undo that; only their own screen can.
 				</p>
 			</td>
 		</tr>

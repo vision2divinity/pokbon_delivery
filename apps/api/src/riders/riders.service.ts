@@ -208,10 +208,21 @@ export class RidersService {
   async upsertFromPlugin(input: RiderUpsertInput) {
     const existing = await this.prisma.rider.findUnique({ where: { phone: input.phone } });
 
+    // Blank means "leave this as it is", never "erase it". Somebody re-adding a
+    // rider to correct one field is adding information, not volunteering to
+    // wipe the licence and next of kin they typed in last week. Removing a
+    // detail is done on the rider's own screen, deliberately.
+    const given = <T,>(value: T | undefined | null): T | undefined => {
+      if (value === undefined || value === null) return undefined;
+      if (typeof value === 'string' && value.trim() === '') return undefined;
+      return value;
+    };
+
     // Recording the agreement is a claim somebody made on a date, not a fact
     // about the database, so it is written with who said so. Without it the
     // rider simply accepts it in the app before going on duty, which is the
     // right fallback rather than a silent bypass.
+    const alreadyAccepted = existing?.agreementAcceptedAt != null;
     const agreement = input.agreementSignedOnPaper
       ? {
           agreementVersion: this.settings.get('agreement_version'),
@@ -219,27 +230,30 @@ export class RidersService {
         }
       : {};
 
-    const note = [
-      input.agreementSignedOnPaper
-        ? `Agreement recorded as signed on paper by ${input.actor}.`
-        : 'Agreement not yet accepted — the rider must accept it in the app before going on duty.',
-      input.note?.trim(),
-    ]
-      .filter(Boolean)
-      .join(' ');
+    // Only say something about the agreement when it is true. Leaving the box
+    // unticked for a rider who has already accepted does not un-accept them,
+    // and the note must not claim it did.
+    const agreementLine = input.agreementSignedOnPaper
+      ? `Agreement recorded as signed on paper by ${input.actor}.`
+      : alreadyAccepted
+        ? null
+        : 'Agreement not yet accepted — the rider must accept it in the app before going on duty.';
+
+    const note = [agreementLine, given(input.note)].filter(Boolean).join(' ');
 
     const profile = {
-      fullName: input.fullName,
+      fullName: given(input.fullName),
       vehicleClass: input.vehicleClass,
-      vehicleRegistration: input.vehicleRegistration ?? null,
-      baseZoneCode: input.baseZoneCode ?? null,
-      momoNumber: input.momoNumber ?? null,
-      licenceNumber: input.licenceNumber ?? null,
-      idType: input.idType ?? null,
-      idNumber: input.idNumber ?? null,
-      nextOfKinName: input.nextOfKinName ?? null,
-      nextOfKinPhone: input.nextOfKinPhone ?? null,
-      reviewNote: note,
+      vehicleRegistration: given(input.vehicleRegistration),
+      baseZoneCode: given(input.baseZoneCode),
+      momoNumber: given(input.momoNumber),
+      licenceNumber: given(input.licenceNumber),
+      idType: given(input.idType),
+      idNumber: given(input.idNumber),
+      nextOfKinName: given(input.nextOfKinName),
+      nextOfKinPhone: given(input.nextOfKinPhone),
+      // An empty note here means nothing new was said, so the existing one stands.
+      reviewNote: given(note),
       decidedBy: input.actor,
       decidedAt: new Date(),
       ...agreement,
@@ -270,6 +284,7 @@ export class RidersService {
         status: input.status,
         appliedAt: new Date(),
         ...profile,
+        fullName: input.fullName,
       },
     });
 

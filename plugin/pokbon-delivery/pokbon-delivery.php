@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.0
+ * Version:           0.4.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,14 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.1 — a blank field leaves what is already there alone.
+ *   0.4.0 wrote every field on every save, so re-adding a rider to correct
+ *   one detail erased the licence, ID, mobile money number and next of kin
+ *   that had been typed in before. Found the hard way, on a real record,
+ *   within minutes of shipping. Blank now means "unchanged"; removing a
+ *   detail is done on the rider's own screen, deliberately.
+ *   Unticking the agreement box for somebody who has already accepted no
+ *   longer rewrites their note to claim they have not.
  * 0.4.0 — onboard a rider yourself, from the Riders screen.
  *   Self-signup stays the normal path, but the first riders are recruited in
  *   person with their licence on the table, and telling them to go home and
