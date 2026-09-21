@@ -142,6 +142,10 @@ model Zone {
   radiusMetres Int     @map("radius_metres")
   active       Boolean @default(true)
 
+  /// Which band this zone prices under when no explicit pair exists. Adding a
+  /// zone costs this one decision instead of a price against every other zone.
+  band         String? @map("band")
+
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("zones")
@@ -165,6 +169,56 @@ model ZonePrice {
 
   @@unique([fromZoneCode, toZoneCode])
   @@map("zone_prices")
+}
+
+/// A group of zones that price alike: Inner Accra, Outer Accra, Kumasi Metro.
+model Band {
+  code   String  @id
+  name   String
+  active Boolean @default(true)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bands")
+}
+
+/// Rung 2. One price for every zone in one band travelling to every zone in
+/// another, so four bands cover any number of zones with sixteen prices.
+model BandPrice {
+  id String @id @default(uuid()) @db.Uuid
+
+  fromBand String @map("from_band")
+  toBand   String @map("to_band")
+
+  riderFeeMinor   Int @map("rider_fee_minor")
+  buyerPriceMinor Int @map("buyer_price_minor")
+
+  version Int
+  active  Boolean @default(true)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([fromBand, toBand])
+  @@map("band_prices")
+}
+
+/// Rung 3, the catch-all. A zone created this morning is priced this morning.
+model DistanceBand {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Upper bound in kilometres, inclusive. Ordered ascending at read time.
+  maxKm Float @map("max_km")
+
+  riderFeeMinor   Int @map("rider_fee_minor")
+  buyerPriceMinor Int @map("buyer_price_minor")
+
+  version Int
+  active  Boolean @default(true)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([maxKm])
+  @@map("distance_bands")
 }
 
 model Setting {
@@ -233,6 +287,11 @@ model Job {
   amountDueMinor Int @default(0) @map("amount_due_minor")
 
   /// Frozen at creation (§ 9b). A later matrix edit never changes a live job.
+  /// Which rung of the ladder set this price, and what matched. Without it a
+  /// fee that looks wrong six weeks later cannot be explained to a rider.
+  priceRung       String? @map("price_rung")
+  priceMatched    String? @map("price_matched")
+
   riderFeeMinor   Int  @map("rider_fee_minor")
   /// NEVER serialised to a rider (§ 9c).
   buyerPriceMinor Int  @map("buyer_price_minor")

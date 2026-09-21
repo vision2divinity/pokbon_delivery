@@ -125,8 +125,8 @@ export class SettingsService implements OnModuleInit {
         for (const z of payload.zones) {
           await tx.zone.upsert({
             where: { code: z.code },
-            create: { code: z.code, name: z.name, region: z.region ?? null, lat: z.lat, lng: z.lng, radiusMetres: z.radiusMetres, active: z.active },
-            update: { name: z.name, region: z.region ?? null, lat: z.lat, lng: z.lng, radiusMetres: z.radiusMetres, active: z.active },
+            create: { code: z.code, name: z.name, region: z.region ?? null, lat: z.lat, lng: z.lng, radiusMetres: z.radiusMetres, band: z.band ?? null, active: z.active },
+            update: { name: z.name, region: z.region ?? null, lat: z.lat, lng: z.lng, radiusMetres: z.radiusMetres, band: z.band ?? null, active: z.active },
           });
           zones++;
         }
@@ -144,6 +144,71 @@ export class SettingsService implements OnModuleInit {
             where: { fromZoneCode_toZoneCode: { fromZoneCode: p.fromZoneCode, toZoneCode: p.toZoneCode } },
             create: { fromZoneCode: p.fromZoneCode, toZoneCode: p.toZoneCode, riderFeeMinor, buyerPriceMinor, version: payload.version, active: p.active },
             update: { riderFeeMinor, buyerPriceMinor, version: payload.version, active: p.active },
+          });
+          prices++;
+        }
+      }
+
+      if (payload.bands) {
+        const codes = payload.bands.map((b) => b.code);
+        await tx.band.updateMany({ where: { code: { notIn: codes } }, data: { active: false } });
+        for (const b of payload.bands) {
+          await tx.band.upsert({
+            where: { code: b.code },
+            create: { code: b.code, name: b.name, active: b.active },
+            update: { name: b.name, active: b.active },
+          });
+        }
+      }
+
+      if (payload.bandPrices) {
+        const keys = payload.bandPrices.map((p) => `${p.fromBand}|${p.toBand}`);
+        const existing = await tx.bandPrice.findMany({ select: { id: true, fromBand: true, toBand: true } });
+        const stale = existing.filter((e) => !keys.includes(`${e.fromBand}|${e.toBand}`)).map((e) => e.id);
+        if (stale.length) await tx.bandPrice.updateMany({ where: { id: { in: stale } }, data: { active: false } });
+        for (const p of payload.bandPrices) {
+          await tx.bandPrice.upsert({
+            where: { fromBand_toBand: { fromBand: p.fromBand, toBand: p.toBand } },
+            create: {
+              fromBand: p.fromBand,
+              toBand: p.toBand,
+              riderFeeMinor: toMinor(p.riderFee),
+              buyerPriceMinor: toMinor(p.buyerPrice),
+              version: payload.version,
+              active: p.active,
+            },
+            update: {
+              riderFeeMinor: toMinor(p.riderFee),
+              buyerPriceMinor: toMinor(p.buyerPrice),
+              version: payload.version,
+              active: p.active,
+            },
+          });
+          prices++;
+        }
+      }
+
+      if (payload.distanceBands) {
+        const bounds = payload.distanceBands.map((d) => d.maxKm);
+        const existing = await tx.distanceBand.findMany({ select: { id: true, maxKm: true } });
+        const stale = existing.filter((e) => !bounds.includes(e.maxKm)).map((e) => e.id);
+        if (stale.length) await tx.distanceBand.updateMany({ where: { id: { in: stale } }, data: { active: false } });
+        for (const d of payload.distanceBands) {
+          await tx.distanceBand.upsert({
+            where: { maxKm: d.maxKm },
+            create: {
+              maxKm: d.maxKm,
+              riderFeeMinor: toMinor(d.riderFee),
+              buyerPriceMinor: toMinor(d.buyerPrice),
+              version: payload.version,
+              active: d.active,
+            },
+            update: {
+              riderFeeMinor: toMinor(d.riderFee),
+              buyerPriceMinor: toMinor(d.buyerPrice),
+              version: payload.version,
+              active: d.active,
+            },
           });
           prices++;
         }

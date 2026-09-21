@@ -17,7 +17,7 @@ defined( 'ABSPATH' ) || exit;
 class Pokbon_Delivery_Migrations {
 
 	const VERSION_OPTION = 'pokbon_delivery_schema_version';
-	const LATEST_VERSION = 1;
+	const LATEST_VERSION = 2;
 
 	public static function bootstrap(): void {
 		add_action( 'plugins_loaded', [ self::class, 'run_if_needed' ], 15 );
@@ -37,6 +37,9 @@ class Pokbon_Delivery_Migrations {
 			switch ( $v ) {
 				case 1:
 					self::migrate_to_1();
+					break;
+				case 2:
+					self::migrate_to_2();
 					break;
 			}
 			update_option( self::VERSION_OPTION, $v, false );
@@ -66,5 +69,41 @@ class Pokbon_Delivery_Migrations {
 			Pokbon_Delivery_Settings::seed_zones(),
 			false
 		);
+	}
+
+	/**
+	 * Seed the price ladder's lower rungs.
+	 *
+	 * Bands and distance bands are seeded; the zone matrix deliberately is
+	 * not. A seeded zone-pair price would be a guess presented as a decision,
+	 * while a seeded distance band is a floor that stops a fresh install
+	 * refusing every route. Both are editable before anything dispatches.
+	 */
+	private static function migrate_to_2(): void {
+		if ( get_option( Pokbon_Delivery_Settings::OPT_BANDS, null ) === null ) {
+			update_option( Pokbon_Delivery_Settings::OPT_BANDS, Pokbon_Delivery_Settings::seed_bands(), false );
+		}
+		if ( get_option( Pokbon_Delivery_Settings::OPT_DISTANCE, null ) === null ) {
+			update_option( Pokbon_Delivery_Settings::OPT_DISTANCE, Pokbon_Delivery_Settings::seed_distance_bands(), false );
+		}
+
+		// Give the seeded zones a band so rung 2 works out of the box.
+		$zones = get_option( Pokbon_Delivery_Settings::OPT_ZONES, [] );
+		if ( is_array( $zones ) ) {
+			$map = [
+				'MADINA'   => 'OUTER',
+				'CIRCLE'   => 'INNER',
+				'ASHAIMAN' => 'OUTER',
+				'LAPAZ'    => 'INNER',
+				'KUMASI'   => 'KUMASI',
+				'SANTASI'  => 'KUMASI',
+			];
+			foreach ( $zones as $i => $zone ) {
+				if ( empty( $zone['band'] ) && isset( $map[ $zone['code'] ] ) ) {
+					$zones[ $i ]['band'] = $map[ $zone['code'] ];
+				}
+			}
+			update_option( Pokbon_Delivery_Settings::OPT_ZONES, $zones, false );
+		}
 	}
 }

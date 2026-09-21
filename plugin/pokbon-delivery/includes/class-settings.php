@@ -26,6 +26,9 @@ class Pokbon_Delivery_Settings {
 	const OPT_SETTINGS   = 'pokbon_delivery_settings';
 	const OPT_API        = 'pokbon_delivery_api';
 	const OPT_SYNC       = 'pokbon_delivery_sync';
+	const OPT_BANDS      = 'pokbon_delivery_bands';
+	const OPT_BAND_PRICES = 'pokbon_delivery_band_prices';
+	const OPT_DISTANCE   = 'pokbon_delivery_distance_bands';
 
 	/**
 	 * Launch defaults. Mirrors packages/shared/src/settings.ts in the API, and
@@ -153,6 +156,9 @@ class Pokbon_Delivery_Settings {
 			'lat'          => (float) $zone['lat'],
 			'lng'          => (float) $zone['lng'],
 			'radiusMetres' => max( 100, (int) $zone['radiusMetres'] ),
+			// Which band this zone prices under when no explicit pair exists.
+			// The one decision that makes adding a zone cheap.
+			'band'         => strtoupper( sanitize_key( (string) ( $zone['band'] ?? '' ) ) ),
 			'active'       => ! empty( $zone['active'] ),
 		];
 
@@ -240,6 +246,124 @@ class Pokbon_Delivery_Settings {
 		$rate   = (int) ( $markup['rateBps'] ?? 0 );
 		$flat   = (int) ( $markup['flatMinor'] ?? 0 );
 		return $rider_fee_minor + (int) round( $rider_fee_minor * $rate / 10000 ) + $flat;
+	}
+
+	// ─── rung 2: bands ──────────────────────────────────────────────────────
+
+	/** Launch bands. Enough structure to be useful, few enough to reason about. */
+	public static function seed_bands(): array {
+		return [
+			[ 'code' => 'INNER',    'name' => 'Inner Accra',   'active' => true ],
+			[ 'code' => 'OUTER',    'name' => 'Outer Accra',   'active' => true ],
+			[ 'code' => 'KUMASI',   'name' => 'Kumasi metro',  'active' => true ],
+			[ 'code' => 'REGIONAL', 'name' => 'Other regions', 'active' => true ],
+		];
+	}
+
+	public static function bands(): array {
+		$bands = get_option( self::OPT_BANDS, null );
+		return is_array( $bands ) ? $bands : [];
+	}
+
+	public static function active_bands(): array {
+		return array_values( array_filter( self::bands(), static function ( $b ) {
+			return ! empty( $b['active'] );
+		} ) );
+	}
+
+	public static function save_bands( array $bands ): void {
+		$clean = [];
+		foreach ( $bands as $band ) {
+			$code = strtoupper( sanitize_key( (string) ( $band['code'] ?? '' ) ) );
+			if ( $code === '' ) {
+				continue;
+			}
+			$clean[] = [
+				'code'   => $code,
+				'name'   => sanitize_text_field( (string) ( $band['name'] ?? $code ) ),
+				'active' => ! empty( $band['active'] ),
+			];
+		}
+		update_option( self::OPT_BANDS, $clean, false );
+		self::mark_dirty();
+	}
+
+	/** Stored as [ "FROM|TO" => [ riderFeeMinor, buyerPriceMinor ] ], like the zone matrix. */
+	public static function band_prices(): array {
+		$prices = get_option( self::OPT_BAND_PRICES, [] );
+		return is_array( $prices ) ? $prices : [];
+	}
+
+	public static function band_price( string $from, string $to ): ?array {
+		$prices = self::band_prices();
+		$key    = $from . '|' . $to;
+		if ( empty( $prices[ $key ] ) ) {
+			return null;
+		}
+		return [
+			'riderFeeMinor'   => (int) $prices[ $key ]['riderFeeMinor'],
+			'buyerPriceMinor' => (int) $prices[ $key ]['buyerPriceMinor'],
+		];
+	}
+
+	public static function save_band_price( string $from, string $to, float $rider_ghs, float $buyer_ghs ): void {
+		$prices = self::band_prices();
+		$prices[ $from . '|' . $to ] = [
+			'riderFeeMinor'   => self::to_minor( $rider_ghs ),
+			'buyerPriceMinor' => self::to_minor( $buyer_ghs ),
+		];
+		update_option( self::OPT_BAND_PRICES, $prices, false );
+		self::mark_dirty();
+	}
+
+	public static function clear_band_price( string $from, string $to ): void {
+		$prices = self::band_prices();
+		unset( $prices[ $from . '|' . $to ] );
+		update_option( self::OPT_BAND_PRICES, $prices, false );
+		self::mark_dirty();
+	}
+
+	// ─── rung 3: distance ───────────────────────────────────────────────────
+
+	/**
+	 * The catch-all. Seeded with something sane so a fresh install can price
+	 * any route on day one rather than refusing everything.
+	 */
+	public static function seed_distance_bands(): array {
+		return [
+			[ 'maxKm' => 5,    'riderFeeMinor' => 1500,  'buyerPriceMinor' => 2000 ],
+			[ 'maxKm' => 10,   'riderFeeMinor' => 2500,  'buyerPriceMinor' => 3500 ],
+			[ 'maxKm' => 20,   'riderFeeMinor' => 4000,  'buyerPriceMinor' => 5500 ],
+			[ 'maxKm' => 50,   'riderFeeMinor' => 7000,  'buyerPriceMinor' => 9500 ],
+			// Deliberately huge: without a final catch-all a long route falls
+			// off the end of the ladder and reads as "not served".
+			[ 'maxKm' => 2000, 'riderFeeMinor' => 15000, 'buyerPriceMinor' => 20000 ],
+		];
+	}
+
+	public static function distance_bands(): array {
+		$bands = get_option( self::OPT_DISTANCE, null );
+		return is_array( $bands ) ? $bands : [];
+	}
+
+	public static function save_distance_bands( array $bands ): void {
+		$clean = [];
+		foreach ( $bands as $band ) {
+			$max = (float) ( $band['maxKm'] ?? 0 );
+			if ( $max <= 0 ) {
+				continue;
+			}
+			$clean[] = [
+				'maxKm'           => $max,
+				'riderFeeMinor'   => self::to_minor( (float) ( $band['riderFee'] ?? 0 ) ),
+				'buyerPriceMinor' => self::to_minor( (float) ( $band['buyerPrice'] ?? 0 ) ),
+			];
+		}
+		usort( $clean, static function ( $a, $b ) {
+			return $a['maxKm'] <=> $b['maxKm'];
+		} );
+		update_option( self::OPT_DISTANCE, $clean, false );
+		self::mark_dirty();
 	}
 
 	// ─── the API connection ─────────────────────────────────────────────────
@@ -361,11 +485,39 @@ class Pokbon_Delivery_Settings {
 			];
 		}
 
+		$band_prices = [];
+		foreach ( self::band_prices() as $key => $row ) {
+			[ $from, $to ] = array_pad( explode( '|', $key ), 2, '' );
+			if ( $from === '' || $to === '' ) {
+				continue;
+			}
+			$band_prices[] = [
+				'fromBand'   => $from,
+				'toBand'     => $to,
+				'riderFee'   => self::from_minor( (int) $row['riderFeeMinor'] ),
+				'buyerPrice' => self::from_minor( (int) $row['buyerPriceMinor'] ),
+				'active'     => true,
+			];
+		}
+
+		$distance = [];
+		foreach ( self::distance_bands() as $row ) {
+			$distance[] = [
+				'maxKm'      => (float) $row['maxKm'],
+				'riderFee'   => self::from_minor( (int) $row['riderFeeMinor'] ),
+				'buyerPrice' => self::from_minor( (int) $row['buyerPriceMinor'] ),
+				'active'     => true,
+			];
+		}
+
 		return [
-			'version'  => self::sync_version(),
-			'zones'    => array_values( self::zones() ),
-			'prices'   => $prices,
-			'settings' => self::all(),
+			'version'       => self::sync_version(),
+			'zones'         => array_values( self::zones() ),
+			'prices'        => $prices,
+			'bands'         => array_values( self::bands() ),
+			'bandPrices'    => $band_prices,
+			'distanceBands' => $distance,
+			'settings'      => self::all(),
 		];
 	}
 

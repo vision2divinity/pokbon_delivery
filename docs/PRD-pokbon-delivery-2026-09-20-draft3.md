@@ -268,9 +268,68 @@ Rules:
 - Poll every 10 to 15 seconds while `en_route` and foregrounded. No sockets in phase 1.
 - Feature-detect: if the delivery endpoint 404s, hide delivery entirely.
 
-## 9 · Pricing — the zone matrix
+## 8a · What "delivery" means at checkout — clarified 2026-09-21
 
-**Francis sets the prices.** Not a formula, not a routing engine, not a per-kilometre rate. A table.
+The owner drew this distinction from the live checkout, and getting it wrong would have built the
+wrong thing. **Two different things both say "delivery" on a POKBON order.**
+
+| Option at checkout | What it is | Who prices it |
+|---|---|---|
+| **Ship from Abroad — Air Freight** | The item is not in Ghana. Weight-based, 1–14 days | The marketplace. Untouched by this project |
+| **Ship from Abroad — Sea Freight** | Same, slower and cheaper, 1–45 days | The marketplace. Untouched |
+| **POKBON Delivery Services** | **The rider leg. This is what we are building** | The price ladder, § 9 |
+| **Store Pickup** | The buyer collects from POKBON or the vendor | Free |
+
+**The rider leg is sometimes the whole journey and sometimes the last mile.** For an item held locally
+it is the entire delivery. For an item shipped from abroad the buyer pays freight at checkout, and the
+rider leg happens **when the goods land in Ghana** — which means that job is created on arrival, not at
+checkout. Automatic job creation on `processing` is therefore correct for local stock and wrong for
+freight; a freight order becomes dispatchable only when someone marks the shipment arrived.
+
+**The website and the app show this differently and both are right.** The website charges by region
+(Greater Accra GH₵30, Ashanti GH₵60) because a buyer there types a city and the rider works it out. The
+app lists the four options above explicitly. The price ladder sits behind "POKBON Delivery Services" in
+both.
+
+**None of this reaches the standalone courier service.** Someone booking a rider to move something
+between two addresses has no marketplace, no vendor, no freight and no order status. Pickup, drop-off,
+the ladder, done. Keeping that clean is why the standalone flow must not grow marketplace concepts.
+
+---
+
+## 9 · Pricing — the three-rung ladder
+
+**Francis sets the prices.** Not a formula and not a routing engine. Revised 2026-09-21: a single matrix
+does not survive growth, so the matrix became the top rung of a ladder.
+
+**A route takes the first rung that answers:**
+
+| Rung | What it is | When it earns its place |
+|---|---|---|
+| 1 | **An exact route** — Adenta → Kasoa | A route that is genuinely special: a bad road, a bridge, an area worth more |
+| 2 | **The bands those zones belong to** — Inner Accra → Outer Accra | Structural pricing. Four bands cover any number of zones with sixteen prices |
+| 3 | **How far it actually is** — 0–5km, 5–10km, … | The catch-all, so a zone added this morning prices this morning |
+
+Six zones is 36 cells; twelve is 144; twenty is 400. Pricing every new area against every existing one is
+work nobody keeps up with, and a stale price is worse than no price. With the ladder, **adding a zone
+costs one decision — which band — and it is priced the same day.** Nothing is ever unpriced, and a route
+no rung answers is reported as unserved rather than guessed at.
+
+Each job records **which rung set its price and what matched**, because a fee nobody can explain six
+weeks later is a fee a rider does not trust.
+
+The rules exist twice: in the plugin, so checkout can quote without a round trip to the delivery service,
+and in the service itself. `scripts/check-price-parity.mjs` prices the same routes through both and fails
+on any disagreement.
+
+### 9-0 · Multi-vendor orders — settled 2026-09-21
+
+**Charged per vendor.** Two vendors is two collections and two rider fees however close they are. The
+buyer sees **one total**, not a split, the same way Hubtel does it — a basket broken into delivery lines
+reads as several orders going wrong. The rider sees the jobs and their own earnings.
+
+If any leg is unserved the whole quote is withheld, because taking money for a delivery POKBON cannot
+complete is worse than declining it.
 
 ### 9a · Zones
 

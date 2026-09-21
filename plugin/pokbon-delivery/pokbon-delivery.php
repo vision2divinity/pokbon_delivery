@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.2.1
+ * Version:           0.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,28 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.3.0 — the price ladder. Three rungs, first match wins:
+ *     1. an exact route you priced      — Adenta to Kasoa
+ *     2. the bands those zones belong to — Inner Accra to Outer Accra
+ *     3. how far it actually is          — 0-5km, 5-10km, and so on
+ *   A matrix alone does not survive growth: six zones is 36 cells, twenty is
+ *   400, and every new area means pricing it against every existing one. With
+ *   the ladder, adding a zone costs one decision (its band) and it prices the
+ *   same day. Nothing is ever unpriced, and the exact matrix stays for routes
+ *   that genuinely are special.
+ *   - Pricing screen rebuilt around the three rungs, with a "try a route" box
+ *     that says WHICH rung decided a price. A price nobody can explain is a
+ *     price nobody trusts.
+ *   - Zones gain a band. Bands and distance bands are seeded so a fresh
+ *     install can price anything; the exact matrix is deliberately not seeded,
+ *     because a seeded price is a guess presented as a decision.
+ *   - Multi-vendor orders charge per vendor and show the buyer one total.
+ *   - The rules exist in PHP and in the delivery service, so checkout can
+ *     quote without a round trip. scripts/check-price-parity.mjs prices the
+ *     same routes through both and fails on any disagreement — it caught the
+ *     two labelling the same band "up to 2,000km" and "up to 2000km".
+ *   This prices the RIDER LEG only. Ship-from-abroad freight stays
+ *   weight-based and untouched; store pickup stays free.
  * 0.2.1 — three things the first live calls found:
  *   - FATAL FIXED. The in-app copy called Pokbon_App_Push_Endpoint::send_to_user().
  *     That method is on Pokbon_App_Push; the two classes live in the same file
@@ -82,6 +104,7 @@ require_once POKBON_DELIVERY_DIR . 'includes/class-orders.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-rest.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-labels.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-app-config.php';
+require_once POKBON_DELIVERY_DIR . 'includes/class-pricing.php';
 
 if ( is_admin() ) {
 	require_once POKBON_DELIVERY_DIR . 'admin/class-admin.php';

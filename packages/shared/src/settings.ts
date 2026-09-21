@@ -149,3 +149,122 @@ export function concurrencyCapFor(caps: ConcurrencyCap[], completedJobs: number)
     .sort((a, b) => b.minCompletedJobs - a.minCompletedJobs)[0];
   return applicable?.maxConcurrent ?? 1;
 }
+
+// ─── the price ladder ────────────────────────────────────────────────────────
+
+/**
+ * How a route is priced. PRD § 9, revised 2026-09-21.
+ *
+ * WHY A LADDER RATHER THAN A MATRIX. Six zones is 36 cells; twelve is 144;
+ * twenty is 400. Every new area would mean pricing it against every existing
+ * one, which nobody maintains — and a stale price is worse than no price. So
+ * the matrix becomes the top rung, used where a route genuinely is special,
+ * and two rungs underneath make sure nothing is ever unpriced.
+ *
+ * First match wins:
+ *   1. an explicit zone pair      — Adenta → Kasoa, because you said so
+ *   2. a band pair                — Inner Accra → Outer Accra
+ *   3. a distance band            — anything 0–5km, 5–10km, and so on
+ *
+ * Adding a zone then costs one decision (which band) instead of N prices, and
+ * it is priced the day it is created.
+ */
+export type PriceRung = 'zone-pair' | 'band-pair' | 'distance' | 'unpriced';
+
+export interface PricedRoute {
+  riderFeeMinor: number;
+  buyerPriceMinor: number;
+  /** Which rung answered. Shown in admin so a surprising price is explicable. */
+  rung: PriceRung;
+  /** What matched, for the same reason: "MADINA→CIRCLE", "INNER→OUTER", "0–5km". */
+  matched: string;
+  distanceMetres?: number;
+}
+
+export interface Band {
+  code: string;
+  name: string;
+  active: boolean;
+}
+
+export interface BandPrice {
+  fromBand: string;
+  toBand: string;
+  riderFeeMinor: number;
+  buyerPriceMinor: number;
+}
+
+/** Ordered ascending by maxKm. The last one should be large enough to catch everything. */
+export interface DistanceBand {
+  maxKm: number;
+  riderFeeMinor: number;
+  buyerPriceMinor: number;
+}
+
+export interface PricingInputs {
+  fromZoneCode: string | null;
+  toZoneCode: string | null;
+  fromBand: string | null;
+  toBand: string | null;
+  distanceMetres: number | null;
+}
+
+export interface PricingTables {
+  zonePairs: Map<string, { riderFeeMinor: number; buyerPriceMinor: number }>;
+  bandPairs: BandPrice[];
+  distanceBands: DistanceBand[];
+}
+
+/**
+ * Walk the ladder. Pure, so both services can agree without a round trip and
+ * so it can be tested without a database.
+ */
+export function priceRoute(input: PricingInputs, tables: PricingTables): PricedRoute | null {
+  // 1. An explicit pair. Directional on purpose: Adenta → Kasoa and Kasoa →
+  //    Adenta are different journeys at different times of day.
+  if (input.fromZoneCode && input.toZoneCode) {
+    const exact = tables.zonePairs.get(`${input.fromZoneCode}|${input.toZoneCode}`);
+    if (exact) {
+      return {
+        ...exact,
+        rung: 'zone-pair',
+        matched: `${input.fromZoneCode} → ${input.toZoneCode}`,
+        distanceMetres: input.distanceMetres ?? undefined,
+      };
+    }
+  }
+
+  // 2. The band the zones belong to.
+  if (input.fromBand && input.toBand) {
+    const band = tables.bandPairs.find((b) => b.fromBand === input.fromBand && b.toBand === input.toBand);
+    if (band) {
+      return {
+        riderFeeMinor: band.riderFeeMinor,
+        buyerPriceMinor: band.buyerPriceMinor,
+        rung: 'band-pair',
+        matched: `${input.fromBand} → ${input.toBand}`,
+        distanceMetres: input.distanceMetres ?? undefined,
+      };
+    }
+  }
+
+  // 3. How far it is. The catch-all, so a zone added this morning still prices.
+  if (input.distanceMetres !== null) {
+    const km = input.distanceMetres / 1000;
+    const ordered = [...tables.distanceBands].sort((a, b) => a.maxKm - b.maxKm);
+    const band = ordered.find((b) => km <= b.maxKm);
+    if (band) {
+      return {
+        riderFeeMinor: band.riderFeeMinor,
+        buyerPriceMinor: band.buyerPriceMinor,
+        rung: 'distance',
+        matched: `up to ${band.maxKm}km`,
+        distanceMetres: input.distanceMetres,
+      };
+    }
+  }
+
+  // Nothing matched. The caller says "we do not serve this route yet" rather
+  // than inventing a number.
+  return null;
+}

@@ -197,6 +197,8 @@ export const zoneSchema = z.object({
   region: z.string().max(80).optional(),
   ...latLng,
   radiusMetres: z.number().int().positive(),
+  /** Which band this zone prices under when no explicit pair exists. */
+  band: z.string().max(40).optional(),
   active: z.boolean().default(true),
 });
 
@@ -209,11 +211,36 @@ export const zonePriceSchema = z.object({
   active: z.boolean().default(true),
 });
 
+export const bandSchema = z.object({
+  code: z.string().min(1).max(40),
+  name: z.string().min(1).max(120),
+  active: z.boolean().default(true),
+});
+
+export const bandPriceSchema = z.object({
+  fromBand: z.string().min(1).max(40),
+  toBand: z.string().min(1).max(40),
+  riderFee: z.number().nonnegative(),
+  buyerPrice: z.number().nonnegative(),
+  active: z.boolean().default(true),
+});
+
+export const distanceBandSchema = z.object({
+  /** Upper bound in kilometres, inclusive. */
+  maxKm: z.number().positive(),
+  riderFee: z.number().nonnegative(),
+  buyerPrice: z.number().nonnegative(),
+  active: z.boolean().default(true),
+});
+
 export const settingsSyncSchema = z.object({
   /** Monotonic, from the plugin. Stale syncs (lower version) are ignored. */
   version: z.number().int().nonnegative(),
   zones: z.array(zoneSchema).optional(),
   prices: z.array(zonePriceSchema).optional(),
+  bands: z.array(bandSchema).optional(),
+  bandPrices: z.array(bandPriceSchema).optional(),
+  distanceBands: z.array(distanceBandSchema).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
 });
 

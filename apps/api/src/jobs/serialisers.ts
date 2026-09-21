@@ -101,6 +101,9 @@ export function toAdminJobView(
       uplift: fromMinor(job.upliftMinor),
       declaredValue: fromMinor(job.declaredValueMinor),
       currency: 'GHS',
+      /** Why this fee, in words. A price nobody can explain is a price nobody trusts. */
+      pricedBy: job.priceRung,
+      priceMatched: job.priceMatched,
     },
     rider: job.rider ? toAdminRiderSummary(job.rider) : null,
     events: job.events ?? [],

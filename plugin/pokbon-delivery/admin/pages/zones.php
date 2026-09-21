@@ -18,6 +18,7 @@ if ( ! current_user_can( POKBON_DELIVERY_CAP ) ) {
 
 $zones = Pokbon_Delivery_Settings::zones();
 $edit  = isset( $_GET['zone'] ) ? Pokbon_Delivery_Settings::zone( strtoupper( sanitize_key( wp_unslash( $_GET['zone'] ) ) ) ) : null;
+$bands = Pokbon_Delivery_Settings::active_bands();
 ?>
 <div class="wrap">
 	<h1>Zones</h1>
@@ -29,6 +30,7 @@ $edit  = isset( $_GET['zone'] ) ? Pokbon_Delivery_Settings::zone( strtoupper( sa
 				<th>Code</th>
 				<th>Name</th>
 				<th>Region</th>
+				<th>Band</th>
 				<th>Centre</th>
 				<th>Radius</th>
 				<th>Status</th>
@@ -37,13 +39,14 @@ $edit  = isset( $_GET['zone'] ) ? Pokbon_Delivery_Settings::zone( strtoupper( sa
 		</thead>
 		<tbody>
 		<?php if ( empty( $zones ) ) : ?>
-			<tr><td colspan="7">No zones yet. Add the first one below.</td></tr>
+			<tr><td colspan="8">No zones yet. Add the first one below.</td></tr>
 		<?php else : ?>
 			<?php foreach ( $zones as $zone ) : ?>
 				<tr>
 					<td><strong><?php echo esc_html( $zone['code'] ); ?></strong></td>
 					<td><?php echo esc_html( $zone['name'] ); ?></td>
 					<td><?php echo esc_html( $zone['region'] ?? '' ); ?></td>
+					<td><?php echo esc_html( $zone['band'] ?? '—' ); ?></td>
 					<td><?php echo esc_html( sprintf( '%.4f, %.4f', $zone['lat'], $zone['lng'] ) ); ?></td>
 					<td><?php echo esc_html( number_format( $zone['radiusMetres'] / 1000, 1 ) ); ?> km</td>
 					<td>
@@ -87,6 +90,25 @@ $edit  = isset( $_GET['zone'] ) ? Pokbon_Delivery_Settings::zone( strtoupper( sa
 			<th scope="row"><label for="pkbd-region">Region</label></th>
 			<td><input id="pkbd-region" name="region" type="text" class="regular-text"
 				value="<?php echo esc_attr( $edit['region'] ?? '' ); ?>"></td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pkbd-band">Band</label></th>
+			<td>
+				<select id="pkbd-band" name="band">
+					<option value="">— none —</option>
+					<?php foreach ( $bands as $band ) : ?>
+						<option value="<?php echo esc_attr( $band['code'] ); ?>"
+							<?php selected( $edit['band'] ?? '', $band['code'] ); ?>>
+							<?php echo esc_html( $band['name'] ); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+				<p class="description">
+					How this zone prices when no exact route is set for it. This one choice is what makes
+					adding a zone cheap instead of a price against every other zone.
+					Leave it blank and the zone falls straight through to the distance bands.
+				</p>
+			</td>
 		</tr>
 		<tr>
 			<th scope="row">Centre</th>

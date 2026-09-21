@@ -194,6 +194,7 @@ class Pokbon_Delivery_Admin {
 					'lat'          => (float) ( $_POST['lat'] ?? 0 ),
 					'lng'          => (float) ( $_POST['lng'] ?? 0 ),
 					'radiusMetres' => (int) ( $_POST['radius'] ?? 5000 ),
+					'band'         => (string) wp_unslash( $_POST['band'] ?? '' ),
 					'active'       => ! empty( $_POST['active'] ),
 				] );
 				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_ZONE_SAVED, [ 'code' => $code ] );
@@ -369,6 +370,112 @@ class Pokbon_Delivery_Admin {
 				} else {
 					$notice = sprintf( '%d delivery job(s) created for order #%d.', count( $result['created'] ), $order_id );
 				}
+				break;
+
+			case 'save_bands':
+				$codes  = (array) ( $_POST['band_code'] ?? [] );
+				$names  = (array) ( $_POST['band_name'] ?? [] );
+				$active = (array) ( $_POST['band_active'] ?? [] );
+
+				$bands = [];
+				foreach ( $codes as $i => $code ) {
+					$code = strtoupper( sanitize_key( (string) wp_unslash( $code ) ) );
+					if ( $code === '' ) {
+						continue;
+					}
+					$bands[] = [
+						'code'   => $code,
+						'name'   => sanitize_text_field( (string) wp_unslash( $names[ $i ] ?? $code ) ),
+						// A brand-new row has no checkbox keyed to its code yet,
+						// so an unknown code defaults to active rather than being
+						// saved switched off the moment it is created.
+						'active' => array_key_exists( $code, $active ) ? ! empty( $active[ $code ] ) : true,
+					];
+				}
+
+				Pokbon_Delivery_Settings::save_bands( $bands );
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_SETTINGS_SAVED, [ 'bands' => count( $bands ) ] );
+				$notice = sprintf( '%d band(s) saved.', count( $bands ) );
+				break;
+
+			case 'save_band_matrix':
+				$saved   = 0;
+				$cleared = 0;
+				$rider   = (array) ( $_POST['brider'] ?? [] );
+				$buyer   = (array) ( $_POST['bbuyer'] ?? [] );
+
+				foreach ( $rider as $pair => $rider_raw ) {
+					[ $from, $to ] = array_pad( explode( '|', sanitize_text_field( $pair ) ), 2, '' );
+					if ( $from === '' || $to === '' ) {
+						continue;
+					}
+
+					$rider_ghs = trim( (string) $rider_raw );
+					$buyer_ghs = trim( (string) ( $buyer[ $pair ] ?? '' ) );
+
+					if ( $rider_ghs === '' && $buyer_ghs === '' ) {
+						Pokbon_Delivery_Settings::clear_band_price( $from, $to );
+						$cleared++;
+						continue;
+					}
+					if ( $rider_ghs === '' ) {
+						continue;
+					}
+
+					$rider_minor = Pokbon_Delivery_Settings::to_minor( (float) $rider_ghs );
+					$buyer_minor = $buyer_ghs === ''
+						? Pokbon_Delivery_Settings::marked_up( $rider_minor )
+						: Pokbon_Delivery_Settings::to_minor( (float) $buyer_ghs );
+
+					Pokbon_Delivery_Settings::save_band_price( $from, $to, $rider_minor / 100, $buyer_minor / 100 );
+					$saved++;
+				}
+
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_PRICE_SAVED, [
+					'band_pairs_saved'   => $saved,
+					'band_pairs_cleared' => $cleared,
+				] );
+				$notice = sprintf( '%d band route(s) priced, %d cleared.', $saved, $cleared );
+				break;
+
+			case 'save_distance':
+				$max   = (array) ( $_POST['dist_max'] ?? [] );
+				$rider = (array) ( $_POST['dist_rider'] ?? [] );
+				$buyer = (array) ( $_POST['dist_buyer'] ?? [] );
+
+				$bands = [];
+				foreach ( $max as $i => $km ) {
+					if ( trim( (string) $km ) === '' ) {
+						continue;
+					}
+					$bands[] = [
+						'maxKm'      => (float) $km,
+						'riderFee'   => (float) ( $rider[ $i ] ?? 0 ),
+						'buyerPrice' => (float) ( $buyer[ $i ] ?? 0 ),
+					];
+				}
+
+				Pokbon_Delivery_Settings::save_distance_bands( $bands );
+
+				// Without a large final band a long route falls off the end of
+				// the ladder and silently reads as "not served" at checkout.
+				$largest = 0.0;
+				foreach ( $bands as $b ) {
+					$largest = max( $largest, (float) $b['maxKm'] );
+				}
+				if ( $largest < 100 ) {
+					$notice = sprintf(
+						'%d distance band(s) saved. Your longest band stops at %skm, so any route beyond that will show as "not served".',
+						count( $bands ),
+						rtrim( rtrim( number_format( $largest, 1 ), '0' ), '.' )
+					);
+				} else {
+					$notice = sprintf( '%d distance band(s) saved.', count( $bands ) );
+				}
+
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_PRICE_SAVED, [
+					'distance_bands' => count( $bands ),
+				] );
 				break;
 
 			case 'save_app_config':

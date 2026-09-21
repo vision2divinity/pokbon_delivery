@@ -85,15 +85,21 @@ export class JobsService {
     let riderFeeMinor: number;
     let buyerPriceMinor: number;
     let priceVersion: number | null;
+    let priceRung: string | null;
+    let priceMatched: string | null;
     if (input.pricing) {
       // The plugin already showed the buyer this price at checkout. It wins.
       riderFeeMinor = toMinor(input.pricing.riderFee);
       buyerPriceMinor = toMinor(input.pricing.buyerPrice);
       priceVersion = input.pricing.priceVersion ?? quote?.priceVersion ?? null;
+      priceRung = 'plugin';
+      priceMatched = 'quoted at checkout';
     } else if (quote) {
       riderFeeMinor = quote.riderFeeMinor;
       buyerPriceMinor = quote.buyerPriceMinor;
       priceVersion = quote.priceVersion;
+      priceRung = quote.rung;
+      priceMatched = quote.matched;
     } else {
       throw new HttpException(
         {
@@ -141,6 +147,8 @@ export class JobsService {
           riderFeeMinor,
           buyerPriceMinor,
           priceVersion,
+          priceRung,
+          priceMatched,
           commissionRateBps: commission.rateBps,
           commissionFlatMinor: commission.flatMinor,
         },
@@ -149,7 +157,8 @@ export class JobsService {
         source: input.source,
         paymentMethod: input.payment.method,
         riderSource: input.riderSource,
-        pricedBy: input.pricing ? 'plugin' : 'matrix',
+        pricedBy: priceRung,
+        priceMatched,
       });
       return created;
     });
