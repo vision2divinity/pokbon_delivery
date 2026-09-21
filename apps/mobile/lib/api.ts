@@ -296,7 +296,7 @@ export interface RiderOffer {
   dropoff: { zoneCode: string | null; address: string };
   parcel: { size: string; itemCount: number; description: string | null };
   paymentMethod: string;
-  earnings: { riderFee: number; uplift: number; currency: string };
+  earnings: { riderFee: number; uplift: number; commission: number; total: number; currency: string };
 }
 
 export const rider = {

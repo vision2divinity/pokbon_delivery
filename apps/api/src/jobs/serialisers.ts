@@ -78,9 +78,20 @@ export function toRiderOfferView(offer: JobOffer & { job: Job }) {
     dropoff: { zoneCode: offer.job.dropoffZoneCode, address: offer.job.dropoffAddress, lat: offer.job.dropoffLat, lng: offer.job.dropoffLng },
     parcel: { size: offer.job.parcelSize, itemCount: offer.job.itemCount, description: offer.job.parcelDescription },
     paymentMethod: offer.job.paymentMethod,
+    /*
+     * The same shape, and the same `total`, as the accepted job.
+     *
+     * The offer used to carry the gross fee alone while the job screen showed
+     * it net of commission, so a rider accepted GH¢40 of work and then found
+     * GH¢36. An offer is the moment somebody consents to a price; it has to
+     * be the price they are paid, and the deduction has to be visible before
+     * they tap rather than after.
+     */
     earnings: {
       riderFee: fromMinor(offer.job.riderFeeMinor),
       uplift: fromMinor(offer.job.upliftMinor),
+      commission: fromMinor(commissionMinor(offer.job)),
+      total: fromMinor(offer.job.riderFeeMinor + offer.job.upliftMinor - commissionMinor(offer.job)),
       currency: 'GHS',
     },
   };

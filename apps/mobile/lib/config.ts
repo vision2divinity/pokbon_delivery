@@ -176,6 +176,7 @@ export const FALLBACK: AppConfig = {
       accept: 'Accept',
       decline: 'Decline',
       feeLabel: 'You earn',
+      commissionLabel: 'Fee, less POKBON commission',
       expiresIn: 'Respond within %d seconds',
       secondJobWarning:
         'You are already on a delivery. Taking this one means both are late if either goes wrong.',
@@ -242,6 +243,9 @@ export const FALLBACK: AppConfig = {
     sosButton: false,
     darkMode: true,
     multiJob: true,
+    // Switched from the plugin like everything else here: a rider with the
+    // phone on a mount needs to be told out loud, an office does not.
+    offerVibrate: true,
   },
   rules: {
     codeLength: 6,

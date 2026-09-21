@@ -8,8 +8,8 @@
  */
 import { router, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
-import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { RefreshControl, ScrollView, Vibration, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, Field, H1, H2, Notice, P, Row, Tone } from '../components/ui';
 import { ApiError, jobs as jobsApi, rider as riderApi, RiderJob, RiderOffer } from '../lib/api';
@@ -26,16 +26,44 @@ export default function RiderHome() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  /*
+   * Announce a new offer out loud, not just on screen.
+   *
+   * A rider is not watching this phone. It is in a pocket or on a mount and
+   * they are riding, so an offer that only appears silently is an offer that
+   * expires. The offer window is seconds long, which makes the alert part of
+   * whether this works at all rather than a nicety.
+   *
+   * Vibration is the whole of it for now, because a tone needs a native audio
+   * module and therefore a new build. The pattern is deliberately unlike an
+   * ordinary notification buzz: two pulses, so it is recognisable through a
+   * jacket without looking.
+   */
+  const announced = useRef<Set<string>>(new Set());
+
+  const announce = useCallback((incoming: RiderOffer[]) => {
+    const fresh = incoming.filter((o) => !announced.current.has(o.offerId));
+    // Remember every id currently in play, and forget the ones that have gone,
+    // so a re-offer of the same job after a lapse announces itself again.
+    announced.current = new Set(incoming.map((o) => o.offerId));
+    if (fresh.length === 0) return;
+
+    if (config().features.offerVibrate !== false) {
+      Vibration.vibrate([0, 400, 200, 400]);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const [a, o] = await Promise.all([jobsApi.active(), jobsApi.offers()]);
       setActive(a.jobs);
       setOffers(o.offers);
+      announce(o.offers);
       setError('');
     } catch (e) {
       setError(e instanceof ApiError && e.status === 0 ? copy('errors', 'offline') : '');
     }
-  }, []);
+  }, [announce]);
 
   useFocusEffect(
     useCallback(() => {
@@ -144,7 +172,17 @@ export default function RiderHome() {
               ) : null}
               <Field label="Pick up" value={`${offer.pickup.zoneCode ?? ''} · ${offer.pickup.address}`} />
               <Field label="Deliver to" value={`${offer.dropoff.zoneCode ?? ''} · ${offer.dropoff.address}`} />
-              <Field label={copy('offer', 'feeLabel')} value={money(offer.earnings.riderFee + offer.earnings.uplift)} />
+              {/*
+                * What lands in their pocket, not the gross fee. The breakdown
+                * below only appears when there is something to explain.
+                */}
+              <Field label={copy('offer', 'feeLabel')} value={money(offer.earnings.total)} />
+              {offer.earnings.commission > 0 ? (
+                <Field
+                  label={copy('offer', 'commissionLabel')}
+                  value={`${money(offer.earnings.riderFee + offer.earnings.uplift)} − ${money(offer.earnings.commission)}`}
+                />
+              ) : null}
               {offer.earnings.uplift > 0 ? (
                 <Notice tone="success">{copy('earnings', 'upliftNote')}</Notice>
               ) : null}
