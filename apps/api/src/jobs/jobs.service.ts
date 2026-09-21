@@ -76,9 +76,29 @@ export class JobsService {
 
   /** Contract § 4. Idempotent on source + orderId + vendorId. */
   async createFromPlugin(input: CreateJobInput): Promise<{ job: Job; created: boolean }> {
-    const idempotencyKey = `${input.source}:${input.orderId}:${input.vendorId ?? '-'}`;
-    const existing = await this.prisma.job.findUnique({ where: { idempotencyKey } });
-    if (existing) return { job: existing, created: false };
+    /*
+     * Idempotent on source + orderId + vendorId, so a retried webhook cannot
+     * put two riders on one parcel.
+     *
+     * A CANCELLED job is the exception. Cancelling is a deliberate "this one
+     * is void", and the dispatcher's next move is to send the order again —
+     * so handing the dead job back on that second attempt made cancel and
+     * re-dispatch impossible, which is the workflow the admin screen offers.
+     * Attempts after the first carry a #n suffix, so the original key and its
+     * history stay exactly where they were.
+     */
+    const baseKey = `${input.source}:${input.orderId}:${input.vendorId ?? '-'}`;
+    const attempts = await this.prisma.job.findMany({
+      // Exact, or this key's own numbered attempts. A bare startsWith would
+      // also match vendor 12 when asked about vendor 1.
+      where: { OR: [{ idempotencyKey: baseKey }, { idempotencyKey: { startsWith: `${baseKey}#` } }] },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const standing = attempts.find((job) => job.status !== JobStatus.CANCELLED);
+    if (standing) return { job: standing, created: false };
+
+    const idempotencyKey = attempts.length === 0 ? baseKey : `${baseKey}#${attempts.length + 1}`;
 
     const { quote, fromZoneCode, toZoneCode } = await this.pricing.quoteForPoints(input.pickup, input.dropoff);
 

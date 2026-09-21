@@ -439,7 +439,16 @@ class Pokbon_Delivery_Admin {
 				if ( empty( $result['created'] ) ) {
 					$error = 'No job was created. ' . implode( ' ', $result['skipped'] );
 				} else {
-					$notice = sprintf( '%d delivery job(s) created for order #%d.', count( $result['created'] ), $order_id );
+					$fresh = count( $result['created'] ) - count( $result['reused'] ?? [] );
+					if ( $fresh > 0 ) {
+						$notice = sprintf( '%d delivery job(s) created for order #%d.', $fresh, $order_id );
+					} else {
+						$notice = sprintf(
+							'Nothing new was created: order #%d already has %d delivery job(s) at the delivery service, and they were returned unchanged.',
+							$order_id,
+							count( $result['created'] )
+						);
+					}
 				}
 				break;
 

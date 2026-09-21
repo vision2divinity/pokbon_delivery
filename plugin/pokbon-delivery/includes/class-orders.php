@@ -115,6 +115,7 @@ class Pokbon_Delivery_Orders {
 	public static function create_jobs_for_order( $order ): array {
 		$order_id = (int) $order->get_id();
 		$created  = [];
+		$reused   = [];
 		$skipped  = [];
 
 		$dropoff = self::dropoff_for( $order );
@@ -196,6 +197,13 @@ class Pokbon_Delivery_Orders {
 
 			$created[] = $job_id;
 
+			// The delivery service is idempotent per order and vendor, so a
+			// second dispatch can hand back the job that already exists. Say
+			// which happened rather than reporting both as "created".
+			if ( array_key_exists( 'created', $result ) && ! $result['created'] ) {
+				$reused[] = $job_id;
+			}
+
 			Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_JOB_CREATED, [
 				'order_id'  => $order_id,
 				'vendor_id' => $vendor_id,
@@ -220,7 +228,7 @@ class Pokbon_Delivery_Orders {
 		}
 		$order->save();
 
-		return [ 'created' => $created, 'skipped' => $skipped ];
+		return [ 'created' => $created, 'reused' => $reused, 'skipped' => $skipped ];
 	}
 
 	/**
