@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.1
+ * Version:           0.4.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,16 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.2 — every order was claiming to be dispatched.
+ *   `(array) $order->get_meta(...)` looks like it turns a missing value into
+ *   an empty array. It does not: an absent meta value is '', and (array) ''
+ *   is [''] — one element. `empty()` then said false and `count()` said 1,
+ *   so an order that had never been near a rider rendered as "Dispatched.
+ *   1 job(s), currently created", and the dispatch controls were hidden
+ *   behind that claim. Found on the first real order.
+ *   Job ids are now read in one place, Pokbon_Delivery_Orders::job_ids_for(),
+ *   which drops the empties, and check-plugin-php-traps.mjs fails the build
+ *   if that cast comes back.
  * 0.4.1 — a blank field leaves what is already there alone.
  *   0.4.0 wrote every field on every save, so re-adding a rider to correct
  *   one detail erased the licence, ID, mobile money number and next of kin

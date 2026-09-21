@@ -55,7 +55,7 @@ class Pokbon_Delivery_Order_Panel {
 		}
 
 		$order_id = (int) $order->get_id();
-		$job_ids  = (array) $order->get_meta( Pokbon_Delivery_Orders::META_JOB_IDS );
+		$job_ids  = Pokbon_Delivery_Orders::job_ids_for( $order );
 		$status   = (string) $order->get_meta( Pokbon_Delivery_Orders::META_STATUS );
 		$skipped  = (string) $order->get_meta( Pokbon_Delivery_Orders::META_SKIPPED );
 		$method   = (string) $order->get_shipping_method();

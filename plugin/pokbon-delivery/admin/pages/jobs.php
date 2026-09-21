@@ -60,7 +60,7 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 		$preview   = Pokbon_Delivery_Order_Panel::preview( $order );
 		$kind      = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
 		$zones_all = Pokbon_Delivery_Settings::active_zones();
-		$existing  = (array) $order->get_meta( Pokbon_Delivery_Orders::META_JOB_IDS );
+		$existing  = Pokbon_Delivery_Orders::job_ids_for( $order );
 		?>
 
 		<h2>Send order #<?php echo (int) $dispatch_id; ?> to riders</h2>

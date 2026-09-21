@@ -40,6 +40,23 @@ class Pokbon_Delivery_Orders {
 		add_action( 'woocommerce_order_status_processing', [ self::class, 'on_processing' ], 20, 1 );
 	}
 
+	/**
+	 * The job ids on an order, as an array, with nothing empty in it.
+	 *
+	 * Worth its own method because the obvious `(array) $order->get_meta(...)`
+	 * is a trap: an order with no delivery meta returns '', and casting that
+	 * to an array gives [''] — one element, not none. Every screen that asked
+	 * "has this been dispatched?" that way answered yes for every order that
+	 * had never been near a rider.
+	 */
+	public static function job_ids_for( $order ): array {
+		$raw = $order->get_meta( self::META_JOB_IDS );
+		if ( ! is_array( $raw ) ) {
+			$raw = ( $raw === '' || $raw === null ) ? [] : [ $raw ];
+		}
+		return array_values( array_filter( array_map( 'strval', $raw ), 'strlen' ) );
+	}
+
 	public static function on_processing( $order_id ): void {
 		if ( ! Pokbon_Delivery_API_Client::is_configured() ) {
 			return; // Not set up yet. Silent by design: nothing is broken.
@@ -59,8 +76,7 @@ class Pokbon_Delivery_Orders {
 			return;
 		}
 
-		$existing = $order->get_meta( self::META_JOB_IDS );
-		if ( ! empty( $existing ) ) {
+		if ( self::job_ids_for( $order ) !== [] ) {
 			return; // Already dispatched. Status can revisit processing.
 		}
 
