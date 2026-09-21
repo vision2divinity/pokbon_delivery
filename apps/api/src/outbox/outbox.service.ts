@@ -10,6 +10,80 @@ const MAX_BACKOFF_MS = 10 * 60_000;
 export type OutboundType = 'job.status' | 'sms.send' | 'inbox.send';
 
 /**
+ * How long a perishable message stays worth sending.
+ *
+ * A delivery code is a secret about this minute. Retrying one is not
+ * resilience, it is a second envelope arriving after the lock has changed:
+ * on 2026-09-21 a code SMS retried for an hour against a broken gateway and
+ * finally arrived alongside a newer one, leaving the customer holding two
+ * codes and no way to tell which the rider would accept.
+ *
+ * So perishable rows are abandoned rather than delivered late. The rider's
+ * "send the code again" is the retry, and it issues a fresh code, which is
+ * the only kind of retry that can be correct here.
+ */
+const PERISHABLE_AFTER_MS = 3 * 60_000;
+
+/** Purposes whose value expires. Everything else retries as before. */
+const PERISHABLE_PURPOSES = new Set(['delivery_code', 'payment_prompt', 'rider_otp']);
+
+/**
+ * Characters an SMS can actually carry, and what to use instead.
+ *
+ * Messages go out as GSM 7-bit, so anything outside that alphabet is
+ * substituted by the network — usually with a question mark. A customer at
+ * their door was asked to approve "GH?150.00" because the cedi sign cannot
+ * survive the trip. Sending Unicode instead would carry the glyph but halve
+ * the characters per segment and double the cost of every message, for
+ * decoration.
+ *
+ * So the text is folded here, in the one place every SMS passes through,
+ * rather than trusting each author to remember. Anything still outside the
+ * alphabet after folding is dropped with a warning: a message with a missing
+ * character is better than one with a question mark where money should be.
+ */
+const GSM_SUBSTITUTIONS: Array<[RegExp, string]> = [
+  [/₵/g, 'GHS '],
+  [/[—–]/g, '-'],
+  [/[“”]/g, '"'],
+  [/[‘’]/g, "'"],
+  [/…/g, '...'],
+  // A non-breaking space, which some editors insert invisibly.
+  [/ /g, ' '],
+];
+
+// The GSM 03.38 basic set. Held as a string rather than a character class
+// because half of these need escaping in a regex and the escaping is where
+// mistakes hide.
+const GSM_ALLOWED = new Set(
+  Array.from(
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' +
+      ' \r\n@£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ' +
+      '!"#¤%&\'()*+,-./:;<=>?¡ÄÖÑÜ§¿äöñüà' +
+      // GSM extension table, each billed as two characters but valid.
+      '^{}[~]|\\',
+  ),
+);
+
+export function toGsmSafe(text: string): { text: string; dropped: string[] } {
+  let out = text;
+  for (const [pattern, replacement] of GSM_SUBSTITUTIONS) out = out.replace(pattern, replacement);
+
+  const dropped: string[] = [];
+  out = Array.from(out)
+    .filter((ch) => {
+      if (GSM_ALLOWED.has(ch)) return true;
+      dropped.push(ch);
+      return false;
+    })
+    .join('');
+
+  // 'GHS ' for '₵' can leave 'GH GHS 150.00' where the text already said GH.
+  out = out.replace(/GH\s*GHS\s*/g, 'GHS ').replace(/ {2,}/g, ' ');
+  return { text: out, dropped };
+}
+
+/**
  * Everything the API tells the plugin, delivered with retries.
  *
  * A status callback that fails because WordPress hiccupped must not be lost:
@@ -60,6 +134,16 @@ export class OutboxService implements OnModuleInit, OnModuleDestroy {
         take: BATCH,
       });
       for (const row of due) {
+        const stale = this.isStale(row.type as OutboundType, row.payload as Record<string, unknown>, row.createdAt);
+        if (stale) {
+          // Marked delivered so the sweep lets it go, with the reason kept.
+          await this.prisma.outboundEvent.update({
+            where: { id: row.id },
+            data: { deliveredAt: new Date(), lastError: stale },
+          });
+          this.logger.warn(`Outbound ${row.type} ${row.id} abandoned: ${stale}`);
+          continue;
+        }
         try {
           await this.deliver(row.id, row.type as OutboundType, row.payload as Record<string, unknown>);
           await this.prisma.outboundEvent.update({
@@ -87,15 +171,40 @@ export class OutboxService implements OnModuleInit, OnModuleDestroy {
     return delivered;
   }
 
+  /**
+   * Why this row is no longer worth sending, or null if it still is.
+   *
+   * Deliberately based on when the row was written rather than on attempts:
+   * the question is whether the content is still true, and an hour-old code
+   * is wrong after one failed attempt just as surely as after thirteen.
+   */
+  private isStale(type: OutboundType, payload: Record<string, unknown>, createdAt: Date): string | null {
+    if (type !== 'sms.send') return null;
+    const purpose = String(payload.purpose ?? '');
+    if (!PERISHABLE_PURPOSES.has(purpose)) return null;
+
+    const age = Date.now() - createdAt.getTime();
+    if (age <= PERISHABLE_AFTER_MS) return null;
+
+    return `A ${purpose} message is only good for ${PERISHABLE_AFTER_MS / 60_000} minutes; this one was ${Math.round(age / 60_000)} minutes old. Send a fresh one instead.`;
+  }
+
   private async deliver(id: string, type: OutboundType, payload: Record<string, unknown>): Promise<void> {
     switch (type) {
       case 'job.status':
         return this.plugin.statusCallback(payload, id);
-      case 'sms.send':
-        return this.plugin.sendSms(payload.to as string, payload.message as string, {
+      case 'sms.send': {
+        const safe = toGsmSafe(payload.message as string);
+        if (safe.dropped.length > 0) {
+          this.logger.warn(
+            `Outbound sms ${id} had ${safe.dropped.length} character(s) an SMS cannot carry (${[...new Set(safe.dropped)].join('')}); they were removed.`,
+          );
+        }
+        return this.plugin.sendSms(payload.to as string, safe.text, {
           jobId: payload.jobId as string | undefined,
           purpose: payload.purpose as string,
         });
+      }
       case 'inbox.send':
         return this.plugin.sendInbox(payload as Parameters<PluginClient['sendInbox']>[0]);
       default:

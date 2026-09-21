@@ -358,7 +358,13 @@ export class JobsService {
       const code = await this.codes.issue(jobId, job.codeSends, tx);
       const amountLine =
         job.paymentMethod === PaymentMethod.PAY_ON_DELIVERY
-          ? ` Have GH₵${fromMinor(job.amountDueMinor).toFixed(2)} ready on MoMo: you will get a prompt to approve, no cash.`
+          // GHS, not GH₵: the cedi sign is not in the GSM 7-bit alphabet and
+          // these go out as type 0, so the network substitutes a question
+          // mark. A customer asked at their door to approve "GH?150.00" is
+          // being asked to trust a broken message. Unicode would carry the
+          // symbol but halves the characters per segment and doubles the
+          // cost, for a glyph nobody needs in an SMS.
+          ? ` Have GHS ${fromMinor(job.amountDueMinor).toFixed(2)} ready on MoMo: you will get a prompt to approve, no cash.`
           : '';
       const message = `POKBON: your rider is at your door. Your delivery code is ${code}. Read it to the rider only.${amountLine}`;
 
@@ -639,7 +645,9 @@ export class JobsService {
     const rider = job.riderId ? await tx.rider.findUnique({ where: { id: job.riderId } }) : null;
     const amountLine =
       job.paymentMethod === PaymentMethod.PAY_ON_DELIVERY
-        ? ` Have GH₵${fromMinor(job.amountDueMinor).toFixed(2)} ready on MoMo — you will approve a prompt at the door, no cash.`
+        // GHS and a plain hyphen: neither the cedi sign nor an em dash
+        // survives the GSM 7-bit alphabet.
+        ? ` Have GHS ${fromMinor(job.amountDueMinor).toFixed(2)} ready on MoMo - you will approve a prompt at the door, no cash.`
         : '';
     await this.outbox.enqueue(
       'sms.send',

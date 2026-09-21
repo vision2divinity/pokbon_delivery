@@ -290,7 +290,9 @@ class Pokbon_Delivery_Payments {
 		$sent = Pokbon_Delivery_Messages::sms(
 			$to,
 			sprintf(
-				'POKBON: pay GH₵%s for order #%d here: %s',
+				// GHS, not GH₵. The cedi sign is not in the GSM 7-bit alphabet
+				// and arrives as a question mark on the customer's phone.
+				'POKBON: pay GHS %s for order #%d here: %s',
 				number_format( (float) $order->get_total(), 2 ),
 				$order_id,
 				$url
