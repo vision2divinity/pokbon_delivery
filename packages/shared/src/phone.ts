@@ -33,10 +33,22 @@ export function maskGhanaPhone(e164: string): string {
  * Returns null where the prefix is not confidently one network; the plugin
  * then asks the buyer rather than guessing.
  */
+export const MOMO_PREFIXES: Readonly<Record<'mtn' | 'vod' | 'atl', readonly string[]>> = {
+  // MTN. 053 was missing here and in the plugin until 2026-09-21, and a rider
+  // stood at a door while a payment prompt was refused as an unknown network.
+  mtn: ['24', '25', '53', '54', '55', '59'],
+  // Telecel, formerly Vodafone. 'vod' is still the code Paystack takes.
+  vod: ['20', '50'],
+  // AirtelTigo.
+  atl: ['26', '27', '56', '57'],
+};
+
 export function momoProviderFor(e164: string): 'mtn' | 'vod' | 'atl' | null {
   const p = e164.replace('+233', '').slice(0, 2);
-  if (['24', '54', '55', '59', '25'].includes(p)) return 'mtn';
-  if (['20', '50'].includes(p)) return 'vod';
-  if (['26', '27', '56', '57'].includes(p)) return 'atl';
+  for (const [network, prefixes] of Object.entries(MOMO_PREFIXES)) {
+    if (prefixes.includes(p)) return network as 'mtn' | 'vod' | 'atl';
+  }
+  // Deliberately null rather than a guess: a prompt sent to the wrong network
+  // goes nowhere while somebody waits at a gate.
   return null;
 }
