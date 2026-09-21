@@ -54,6 +54,28 @@ class Pokbon_Delivery_Orders {
 			return; // Already dispatched. Status can revisit processing.
 		}
 
+		/**
+		 * Freight and pickup are never dispatched automatically.
+		 *
+		 * An item shipped from abroad is paid for at checkout and lands weeks
+		 * later; creating the rider job on `processing` would send somebody to
+		 * collect a parcel that is still on a ship. Store pickup needs no
+		 * rider at all. Both are dispatched by hand from the order screen, on
+		 * the day the goods are actually there.
+		 */
+		$kind = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
+		if ( $kind !== 'local' ) {
+			$order->update_meta_data(
+				self::META_SKIPPED,
+				sprintf(
+					'Not dispatched automatically: the buyer chose %s. Use "Send to riders now" on this order when the goods are ready.',
+					$kind === 'freight' ? 'shipping from abroad' : 'store pickup'
+				)
+			);
+			$order->save();
+			return;
+		}
+
 		self::create_jobs_for_order( $order );
 	}
 
@@ -441,7 +463,7 @@ class Pokbon_Delivery_Orders {
 	 * Items grouped by vendor. Falls back to a single job when the install has
 	 * no vendor concept, which is the right behaviour rather than no job.
 	 */
-	private static function vendors_for( $order ): array {
+	public static function vendors_for( $order ): array {
 		$vendors = [];
 
 		foreach ( $order->get_items() as $item ) {

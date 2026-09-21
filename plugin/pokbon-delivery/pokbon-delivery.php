@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.3.0
+ * Version:           0.3.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,20 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.3.1 — dispatch on arrival, for the orders that cannot dispatch themselves.
+ *   A POKBON Delivery panel now sits on the order screen with a "Send to
+ *   riders now" button. It works whatever the order status, which is what a
+ *   shipped-from-abroad order needs: it is paid for at checkout and lands
+ *   weeks later, so the rider leg belongs to the day it arrives.
+ *   - AUTOMATIC DISPATCH NOW SKIPS FREIGHT AND PICKUP. Creating the job on
+ *     `processing` would have sent a rider to collect a parcel still on a
+ *     ship. The order records why it was skipped instead of failing silently.
+ *   - The panel shows what it WILL do before it does it: the method the buyer
+ *     chose, the route, the price, which rung set it, and how many separate
+ *     collections a multi-vendor order means. A button that only says
+ *     "Dispatch" invites a click that sends a rider to the wrong place.
+ *   - Registered for both the classic order screen and High-Performance Order
+ *     Storage, so it does not vanish when the store switches.
  * 0.3.0 — the price ladder. Three rungs, first match wins:
  *     1. an exact route you priced      — Adenta to Kasoa
  *     2. the bands those zones belong to — Inner Accra to Outer Accra
@@ -105,6 +119,7 @@ require_once POKBON_DELIVERY_DIR . 'includes/class-rest.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-labels.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-app-config.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-pricing.php';
+require_once POKBON_DELIVERY_DIR . 'includes/class-order-panel.php';
 
 if ( is_admin() ) {
 	require_once POKBON_DELIVERY_DIR . 'admin/class-admin.php';
@@ -122,6 +137,10 @@ add_action( 'rest_api_init', [ 'Pokbon_Delivery_App_Config', 'register_routes' ]
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Orders', 'bootstrap' ], 20 );
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Payments', 'bootstrap' ], 20 );
 add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Labels', 'bootstrap' ], 20 );
+
+if ( is_admin() ) {
+	add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Order_Panel', 'bootstrap' ], 20 );
+}
 
 if ( is_admin() ) {
 	add_action( 'plugins_loaded', [ 'Pokbon_Delivery_Admin', 'bootstrap' ], 20 );
