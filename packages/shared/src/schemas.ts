@@ -248,3 +248,48 @@ export const quoteSchema = z.object({
   pickup: z.object(latLng).partial().extend({ zoneCode: z.string().optional() }),
   dropoff: z.object(latLng).partial().extend({ zoneCode: z.string().optional() }),
 });
+
+/**
+ * A rider created by POKBON rather than by the rider.
+ *
+ * The normal path is self-signup: a rider installs the app, signs in by SMS,
+ * fills the form, and an admin approves them. That is wrong for the people
+ * POKBON onboards in person — the first riders are recruited at a desk, with
+ * their licence on the table, and asking them to go home and find an app
+ * loses them.
+ *
+ * So an admin can create the record directly. The rider still signs in with
+ * their own number and their own code; they simply find an account already
+ * there and already approved, instead of an empty form.
+ */
+export const riderUpsertSchema = z.object({
+  phone: ghanaPhone,
+  fullName: z.string().min(2).max(120),
+  vehicleClass: z.nativeEnum(VehicleClass).default(VehicleClass.MOTORBIKE),
+  vehicleRegistration: z.string().max(20).optional(),
+  baseZoneCode: z.string().max(40).optional(),
+  momoNumber: ghanaPhone.optional(),
+  licenceNumber: z.string().max(40).optional(),
+  idType: z.enum(['GHANA_CARD', 'VOTER_ID']).optional(),
+  idNumber: z.string().max(40).optional(),
+  nextOfKinName: z.string().max(120).optional(),
+  nextOfKinPhone: ghanaPhone.optional(),
+
+  /** APPROVED puts them straight to work; DRAFT leaves them to finish it themselves. */
+  status: z.enum(['DRAFT', 'APPROVED']).default('APPROVED'),
+
+  /**
+   * Whether the contractor agreement was signed on paper.
+   *
+   * Recorded with who said so, because "the rider agreed" is a claim somebody
+   * made on a date, not a fact about the database. Without it the rider
+   * cannot go on duty until they accept it in the app, which is the correct
+   * fallback rather than a silent bypass.
+   */
+  agreementSignedOnPaper: z.boolean().default(false),
+
+  /** Who created this rider. Written into the record, never inferred. */
+  actor: z.string().min(1).max(120),
+  note: z.string().max(500).optional(),
+});
+export type RiderUpsertInput = z.infer<typeof riderUpsertSchema>;

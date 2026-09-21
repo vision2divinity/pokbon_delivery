@@ -164,6 +164,11 @@ class Pokbon_Delivery_API_Client {
 		return self::get( '/plugin/riders/' . rawurlencode( $rider_id ) );
 	}
 
+	/** Create or update a rider from the admin. Keyed on the phone number. */
+	public static function upsert_rider( array $rider ) {
+		return self::post( '/plugin/riders', $rider );
+	}
+
 	public static function rider_decision( string $rider_id, array $decision ) {
 		return self::post( '/plugin/riders/' . rawurlencode( $rider_id ) . '/decision', $decision );
 	}

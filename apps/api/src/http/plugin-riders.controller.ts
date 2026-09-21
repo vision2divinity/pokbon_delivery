@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
-import { riderDecisionSchema } from '@pokbon-delivery/shared';
+import { riderDecisionSchema, riderUpsertSchema } from '@pokbon-delivery/shared';
 import { toAdminRiderSummary } from '../jobs/serialisers';
 import { PluginAuth } from '../plugin/plugin-auth.guard';
 import { RidersService } from '../riders/riders.service';
@@ -21,6 +21,24 @@ export class PluginRidersController {
         lastLocationAt: r.location?.updatedAt ?? null,
       })),
     };
+  }
+
+  /**
+   * Create or update a rider from the admin, keyed on their phone number.
+   *
+   * Idempotent: running it twice on the same number updates rather than
+   * duplicating, which matters because the phone number is also the login
+   * identity and two riders on one number could not both sign in.
+   */
+  @PluginAuth()
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  upsert(@Body() body: unknown) {
+    const parsed = riderUpsertSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`));
+    }
+    return this.riders.upsertFromPlugin(parsed.data);
   }
 
   @PluginAuth()

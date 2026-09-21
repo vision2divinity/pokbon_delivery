@@ -181,4 +181,126 @@ $id_levels = [
 			</tbody>
 		</table>
 	<?php endif; ?>
+
+	<hr style="margin:2em 0">
+
+	<h2>Add a rider yourself</h2>
+	<p class="description" style="max-width:56em">
+		For riders you recruit in person. They still sign in on the app with their own number and their own code —
+		they just find an account already waiting instead of an empty form. Adding somebody who has already signed
+		up updates their record rather than creating a second one, because the phone number is also how they log in.
+	</p>
+
+	<?php Pokbon_Delivery_Admin::form_open( 'add_rider' ); ?>
+	<table class="form-table" role="presentation">
+		<tr>
+			<th scope="row"><label for="pkbd-r-name">Full name</label></th>
+			<td>
+				<input id="pkbd-r-name" name="full_name" type="text" class="regular-text" required>
+				<p class="description">As it appears on their ID.</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pkbd-r-phone">Phone</label></th>
+			<td>
+				<input id="pkbd-r-phone" name="phone" type="text" class="regular-text" placeholder="024 000 0000" required>
+				<p class="description">
+					<strong>This is how they sign in.</strong> Get it right in front of them — a wrong number means
+					somebody who cannot log in and cannot be reached.
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pkbd-r-vehicle">Vehicle</label></th>
+			<td>
+				<select id="pkbd-r-vehicle" name="vehicle_class">
+					<?php foreach ( [ 'MOTORBIKE' => 'Motorbike', 'TRICYCLE' => 'Tricycle', 'CAR' => 'Car', 'PICKUP' => 'Pickup', 'CANTER' => 'Canter' ] as $value => $label ) : ?>
+						<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<input name="vehicle_registration" type="text" placeholder="GR 1234-26" style="margin-left:.5em">
+				<p class="description">Only the vehicle classes switched on in Settings are offered work.</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pkbd-r-zone">Based in</label></th>
+			<td>
+				<select id="pkbd-r-zone" name="base_zone">
+					<option value="">— none —</option>
+					<?php foreach ( Pokbon_Delivery_Settings::active_zones() as $zone ) : ?>
+						<option value="<?php echo esc_attr( $zone['code'] ); ?>"><?php echo esc_html( $zone['name'] ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<p class="description">Where they usually work. Jobs are offered near the collection point.</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pkbd-r-momo">Paid to</label></th>
+			<td>
+				<input id="pkbd-r-momo" name="momo_number" type="text" class="regular-text" placeholder="Mobile money number">
+				<p class="description">Leave blank to use their sign-in number.</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pkbd-r-licence">Licence</label></th>
+			<td>
+				<input id="pkbd-r-licence" name="licence_number" type="text" class="regular-text">
+				<p class="description">Required for a motorbike, tricycle or car. See it before you type it.</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row">Identity</th>
+			<td>
+				<select name="id_type">
+					<option value="GHANA_CARD">Ghana Card</option>
+					<option value="VOTER_ID">Voter ID</option>
+				</select>
+				<input name="id_number" type="text" placeholder="GHA-000000000-0" style="margin-left:.5em" class="regular-text">
+				<p class="description">
+					Recorded as <strong>photographed only</strong> until somebody checks the chip or the national
+					register. Typing a number here is not verification, and the rider screen says so.
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row">Next of kin</th>
+			<td>
+				<input name="next_of_kin_name" type="text" placeholder="Name">
+				<input name="next_of_kin_phone" type="text" placeholder="024 000 0000" style="margin-left:.5em">
+			</td>
+		</tr>
+		<tr>
+			<th scope="row">Agreement</th>
+			<td>
+				<label>
+					<input name="agreement_signed" type="checkbox" value="1">
+					They have signed the contractor agreement on paper
+				</label>
+				<p class="description">
+					Recorded against your name and today's date. Leave it unticked and they accept it in the app
+					before their first shift — which is the safer default, not a delay.
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row">Approve now</th>
+			<td>
+				<label>
+					<input name="approve_now" type="checkbox" value="1" checked>
+					They can start taking jobs immediately
+				</label>
+				<p class="description">
+					Untick to leave them waiting in the queue instead. Somebody already suspended stays suspended
+					whatever you tick here; that decision belongs on their own screen.
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pkbd-r-note">Note</label></th>
+			<td><input id="pkbd-r-note" name="note" type="text" class="regular-text" style="width:32em"
+				placeholder="Anything worth remembering — who referred them, what you checked"></td>
+		</tr>
+	</table>
+	<p><button type="submit" class="button button-primary">Add this rider</button></p>
+	</form>
 </div>

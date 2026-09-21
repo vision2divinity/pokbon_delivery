@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.3.2
+ * Version:           0.4.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,22 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.0 — onboard a rider yourself, from the Riders screen.
+ *   Self-signup stays the normal path, but the first riders are recruited in
+ *   person with their licence on the table, and telling them to go home and
+ *   find an app loses them. An admin can now create the record directly; the
+ *   rider still signs in with their own number and their own code and simply
+ *   finds an account already waiting.
+ *   - Keyed on the phone number, which is also the login identity, so adding
+ *     somebody twice updates rather than creating a second account that could
+ *     never sign in.
+ *   - A suspended, rejected or departed rider keeps that status however the
+ *     form is filled in. That decision belongs on their own screen, and the
+ *     notice says so rather than silently ignoring the choice.
+ *   - The contractor agreement can be recorded as signed on paper, against
+ *     your name and the date. Left unticked, the rider accepts it in the app
+ *     before their first shift — the safer default, not a delay.
+ *   - An ID typed here is recorded as photographed only, never as verified.
  * 0.3.2 — website orders can be dispatched, and one nested form avoided.
  *   - WEBSITE ORDERS CARRY NO MAP PIN. Only the app's checkout captures one,
  *     so every web order would have been refused with "no coordinates". The

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Rider } from '@prisma/client';
-import { ACTIVE_RIDER_STATUSES, OfferStatus, RiderStatus } from '@pokbon-delivery/shared';
+import { ACTIVE_RIDER_STATUSES, OfferStatus, RiderStatus, RiderUpsertInput } from '@pokbon-delivery/shared';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { fromMinor, SettingsService } from '../settings/settings.service';
@@ -190,6 +190,91 @@ export class RidersService {
     });
     if (!rider) throw new NotFoundException('Rider not found');
     return { ...rider, balance: fromMinor(await this.balanceMinor(riderId)), pendingUplift: fromMinor(rider.pendingUpliftMinor) };
+  }
+
+  /**
+   * Create or update a rider from the admin, by phone number.
+   *
+   * The normal path is self-signup, and it stays the normal path. This exists
+   * because the first riders are recruited in person, with their licence on
+   * the table — telling them to go home and find an app loses them.
+   *
+   * Keyed on the phone number, which is also the login identity, so this is
+   * safe to run twice and safe to run on somebody who has already signed up.
+   * An existing rider is updated, never duplicated, and nothing here can
+   * demote somebody: a SUSPENDED or LEFT rider keeps that status until
+   * somebody decides otherwise on the rider screen.
+   */
+  async upsertFromPlugin(input: RiderUpsertInput) {
+    const existing = await this.prisma.rider.findUnique({ where: { phone: input.phone } });
+
+    // Recording the agreement is a claim somebody made on a date, not a fact
+    // about the database, so it is written with who said so. Without it the
+    // rider simply accepts it in the app before going on duty, which is the
+    // right fallback rather than a silent bypass.
+    const agreement = input.agreementSignedOnPaper
+      ? {
+          agreementVersion: this.settings.get('agreement_version'),
+          agreementAcceptedAt: new Date(),
+        }
+      : {};
+
+    const note = [
+      input.agreementSignedOnPaper
+        ? `Agreement recorded as signed on paper by ${input.actor}.`
+        : 'Agreement not yet accepted — the rider must accept it in the app before going on duty.',
+      input.note?.trim(),
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const profile = {
+      fullName: input.fullName,
+      vehicleClass: input.vehicleClass,
+      vehicleRegistration: input.vehicleRegistration ?? null,
+      baseZoneCode: input.baseZoneCode ?? null,
+      momoNumber: input.momoNumber ?? null,
+      licenceNumber: input.licenceNumber ?? null,
+      idType: input.idType ?? null,
+      idNumber: input.idNumber ?? null,
+      nextOfKinName: input.nextOfKinName ?? null,
+      nextOfKinPhone: input.nextOfKinPhone ?? null,
+      reviewNote: note,
+      decidedBy: input.actor,
+      decidedAt: new Date(),
+      ...agreement,
+    };
+
+    if (existing) {
+      // Never quietly reinstate somebody who was suspended or who left. That
+      // decision belongs on the rider screen, where it is deliberate.
+      const locked: string[] = [RiderStatus.SUSPENDED, RiderStatus.LEFT, RiderStatus.REJECTED];
+      const status = locked.includes(existing.status) ? existing.status : input.status;
+
+      const updated = await this.prisma.rider.update({
+        where: { id: existing.id },
+        data: { ...profile, status },
+      });
+
+      this.logger.log(`Rider ${updated.id} updated from the admin by ${input.actor}`);
+      return {
+        rider: await this.detail(updated.id),
+        created: false,
+        statusHeld: status !== input.status ? status : null,
+      };
+    }
+
+    const created = await this.prisma.rider.create({
+      data: {
+        phone: input.phone,
+        status: input.status,
+        appliedAt: new Date(),
+        ...profile,
+      },
+    });
+
+    this.logger.log(`Rider ${created.id} created from the admin by ${input.actor} (${input.phone})`);
+    return { rider: await this.detail(created.id), created: true, statusHeld: null };
   }
 
   async decide(

@@ -255,6 +255,70 @@ class Pokbon_Delivery_Admin {
 				$notice = sprintf( '%d route(s) priced, %d cleared.', $saved, $cleared ) . $notice;
 				break;
 
+			case 'add_rider':
+				$phone = trim( (string) wp_unslash( $_POST['phone'] ?? '' ) );
+				$name  = trim( (string) wp_unslash( $_POST['full_name'] ?? '' ) );
+
+				if ( $phone === '' || $name === '' ) {
+					$error = 'A rider needs at least a name and a phone number.';
+					break;
+				}
+
+				$payload = array_filter(
+					[
+						'phone'                  => $phone,
+						'fullName'               => sanitize_text_field( $name ),
+						'vehicleClass'           => strtoupper( sanitize_key( (string) wp_unslash( $_POST['vehicle_class'] ?? 'MOTORBIKE' ) ) ),
+						'vehicleRegistration'    => sanitize_text_field( (string) wp_unslash( $_POST['vehicle_registration'] ?? '' ) ),
+						'baseZoneCode'           => strtoupper( sanitize_key( (string) wp_unslash( $_POST['base_zone'] ?? '' ) ) ),
+						'momoNumber'             => trim( (string) wp_unslash( $_POST['momo_number'] ?? '' ) ),
+						'licenceNumber'          => sanitize_text_field( (string) wp_unslash( $_POST['licence_number'] ?? '' ) ),
+						'idType'                 => strtoupper( sanitize_key( (string) wp_unslash( $_POST['id_type'] ?? '' ) ) ),
+						'idNumber'               => sanitize_text_field( (string) wp_unslash( $_POST['id_number'] ?? '' ) ),
+						'nextOfKinName'          => sanitize_text_field( (string) wp_unslash( $_POST['next_of_kin_name'] ?? '' ) ),
+						'nextOfKinPhone'         => trim( (string) wp_unslash( $_POST['next_of_kin_phone'] ?? '' ) ),
+						'note'                   => sanitize_text_field( (string) wp_unslash( $_POST['note'] ?? '' ) ),
+					],
+					static function ( $v ) {
+						return $v !== '' && $v !== null;
+					}
+				);
+
+				// Booleans and enums are set after the filter, because `false`
+				// and a deliberate DRAFT would both be stripped by it.
+				$payload['status']                 = ! empty( $_POST['approve_now'] ) ? 'APPROVED' : 'DRAFT';
+				$payload['agreementSignedOnPaper'] = ! empty( $_POST['agreement_signed'] );
+				$payload['actor']                  = wp_get_current_user()->user_login;
+
+				$result = Pokbon_Delivery_API_Client::upsert_rider( $payload );
+
+				if ( is_wp_error( $result ) ) {
+					$error = $result->get_error_message();
+					break;
+				}
+
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_RIDER_DECISION, [
+					'action'   => empty( $result['created'] ) ? 'updated' : 'created',
+					'phone'    => $phone,
+					'approved' => $payload['status'] === 'APPROVED',
+					'paper'    => $payload['agreementSignedOnPaper'],
+				] );
+
+				$notice = empty( $result['created'] )
+					? sprintf( '%s already had an account on that number, so it was updated rather than duplicated.', $name )
+					: sprintf( '%s added. They sign in on the app with %s and will get a code by SMS.', $name, $phone );
+
+				if ( ! empty( $result['statusHeld'] ) ) {
+					$notice .= sprintf(
+						' Their status stays %s — change it on their own screen rather than here.',
+						strtolower( (string) $result['statusHeld'] )
+					);
+				}
+				if ( empty( $payload['agreementSignedOnPaper'] ) ) {
+					$notice .= ' They must accept the contractor agreement in the app before they can go on duty.';
+				}
+				break;
+
 			case 'rider_decision':
 				$rider_id = sanitize_text_field( (string) wp_unslash( $_POST['rider_id'] ?? '' ) );
 				$decision = sanitize_key( (string) wp_unslash( $_POST['decision'] ?? '' ) );
