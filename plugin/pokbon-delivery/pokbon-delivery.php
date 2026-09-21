@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.3
+ * Version:           0.4.4
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,17 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.4 — the geography class was never loaded.
+ *   includes/class-geo.php sat there unreferenced: the bootstrap never
+ *   required it, so Pokbon_Delivery_Geo did not exist at runtime and every
+ *   path that measured a distance or resolved a map pin died with
+ *   "Class Pokbon_Delivery_Geo not found". That is the dispatch screen's
+ *   white page from 0.4.2, the distance rung, and every order placed from
+ *   the app, which is the only kind that carries a pin.
+ *   It went unseen because the one screen that used it fataled blankly.
+ *   0.4.3 made that screen say what broke; it named this in one reload.
+ *   check-plugin-php-traps.mjs now fails if any file in includes/ is not
+ *   required by the bootstrap.
  * 0.4.3 — found by dispatching a real order.
  *   - Cash on delivery was being sent to the riders as PREPAID with nothing
  *     to collect. is_paid() asks whether an order has reached a paid STATUS,
@@ -178,6 +189,8 @@ define( 'POKBON_DELIVERY_CAP', 'manage_woocommerce' );
 
 require_once POKBON_DELIVERY_DIR . 'includes/class-signature.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-settings.php';
+require_once POKBON_DELIVERY_DIR . 'includes/class-geo.php';
+
 require_once POKBON_DELIVERY_DIR . 'includes/class-migrations.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-api-client.php';
 require_once POKBON_DELIVERY_DIR . 'includes/class-audit.php';

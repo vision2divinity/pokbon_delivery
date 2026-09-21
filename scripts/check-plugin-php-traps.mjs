@@ -52,6 +52,23 @@ function* phpFiles(dir) {
 }
 
 let failures = 0;
+
+// Every class file has to be loaded by the bootstrap. class-geo.php sat in
+// includes/ unreferenced, so Pokbon_Delivery_Geo was never defined and every
+// route that measured a distance fataled — invisibly, because the only screen
+// that used it died as a blank "critical error".
+{
+  const bootstrap = readFileSync(join(ROOT, 'pokbon-delivery.php'), 'utf8');
+  for (const name of readdirSync(join(ROOT, 'includes'))) {
+    if (!name.endsWith('.php')) continue;
+    if (bootstrap.includes(`includes/${name}`)) continue;
+    failures += 1;
+    console.error(`plugin/pokbon-delivery/includes/${name}  never required`);
+    console.error('      pokbon-delivery.php does not load it, so its class does not exist at runtime.');
+    console.error('');
+  }
+}
+
 for (const file of phpFiles(ROOT)) {
   const source = readFileSync(file, 'utf8');
   const lines = source.split(/\r?\n/);
