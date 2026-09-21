@@ -25,6 +25,16 @@ class Pokbon_Delivery_Orders {
 	const META_STATUS     = '_pokbon_delivery_status';
 	const META_FEE        = '_pokbon_delivery_fee';
 	const META_SKIPPED    = '_pokbon_delivery_skipped_reason';
+	/**
+	 * The zone a dispatcher chose for an order that has no coordinates.
+	 *
+	 * Stored separately from the buyer's own pin, never over it. The
+	 * marketplace keeps `_pokbon_delivery_lat/lng` read-only on purpose —
+	 * letting an admin retype them would create a second version of what the
+	 * buyer meant. Choosing which zone to dispatch into is a different act,
+	 * and this records that it was POKBON's decision rather than the buyer's.
+	 */
+	const META_DISPATCH_ZONE = '_pokbon_delivery_dispatch_zone';
 
 	public static function bootstrap(): void {
 		add_action( 'woocommerce_order_status_processing', [ self::class, 'on_processing' ], 20, 1 );
@@ -237,18 +247,41 @@ class Pokbon_Delivery_Orders {
 
 	// ─── where things are ───────────────────────────────────────────────────
 
-	/** The buyer's pin, captured at checkout since plugin 1.20.1. */
+	/**
+	 * Where the parcel goes.
+	 *
+	 * Two sources, and the difference matters. The app's checkout captures a
+	 * pin (plugin 1.20.1), which is the best answer. The website's checkout
+	 * does not — a buyer there types a city and a street, and the rider works
+	 * it out, which is how POKBON has always run. For those orders a
+	 * dispatcher picks the zone, and the zone's centre stands in as the map
+	 * target while the typed address and the phone number do the real work.
+	 *
+	 * That is not a degraded answer for pricing: the ladder prices by zone,
+	 * so a chosen zone prices exactly as a pin in that zone would.
+	 */
 	private static function dropoff_for( $order ): ?array {
 		$lat = (float) $order->get_meta( self::META_LAT );
 		$lng = (float) $order->get_meta( self::META_LNG );
+		$has_pin = ! ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 );
 
-		if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
-			return null;
-		}
-
-		$zone = Pokbon_Delivery_Geo::resolve_zone_code( $lat, $lng );
-		if ( $zone === '' ) {
-			return null; // Outside every coverage area: not deliverable yet.
+		if ( $has_pin ) {
+			$zone = Pokbon_Delivery_Geo::resolve_zone_code( $lat, $lng );
+			if ( $zone === '' ) {
+				return null; // A real pin, outside every coverage area.
+			}
+		} else {
+			$chosen = (string) $order->get_meta( self::META_DISPATCH_ZONE );
+			$picked = $chosen !== '' ? Pokbon_Delivery_Settings::zone( $chosen ) : null;
+			if ( ! $picked || empty( $picked['active'] ) ) {
+				return null; // Nothing to route to, and nothing worth guessing.
+			}
+			$zone = (string) $picked['code'];
+			// The zone centre is the map target. The rider is shown the typed
+			// address and the customer's number, which is what they will
+			// actually use.
+			$lat = (float) $picked['lat'];
+			$lng = (float) $picked['lng'];
 		}
 
 		$phone = Pokbon_Delivery_Messages::normalise_ghana_phone( (string) $order->get_billing_phone() );
@@ -262,7 +295,10 @@ class Pokbon_Delivery_Orders {
 			'address'      => trim( $order->get_shipping_address_1() . ' ' . $order->get_shipping_city() ) ?: $order->get_billing_address_1(),
 			'zoneCode'     => $zone,
 			'ghanaPost'    => (string) $order->get_meta( self::META_GHANAPOST ),
-			'note'         => (string) $order->get_meta( self::META_NOTE ),
+			'note'         => trim(
+				(string) $order->get_meta( self::META_NOTE )
+				. ( $has_pin ? '' : ' [No map pin on this order — go by the address and call the customer.]' )
+			),
 			'contactName'  => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
 			'contactPhone' => $phone,
 		];

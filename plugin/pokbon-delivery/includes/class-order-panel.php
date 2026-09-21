@@ -116,15 +116,25 @@ class Pokbon_Delivery_Order_Panel {
 			echo '<p class="description" style="color:#996800">Last attempt: ' . esc_html( $skipped ) . '</p>';
 		}
 
-		echo Pokbon_Delivery_Admin::button(
-			'dispatch_order',
-			'Send to riders now',
-			[ 'order_id' => $order_id ],
-			'button button-primary'
+		/*
+		 * A LINK, NOT A FORM, AND THAT IS NOT A STYLE CHOICE.
+		 *
+		 * WooCommerce renders this panel inside the order edit form. HTML has
+		 * no nested forms: a form emitted here is merged into that one by the
+		 * browser, so the button would submit the order screen and carry our
+		 * hidden action along with it. The same mistake made "Save connection"
+		 * silently run the connection test on the settings page.
+		 *
+		 * So the control goes to a screen of its own, which also gives room to
+		 * choose a zone for an order that has no pin.
+		 */
+		printf(
+			'<p><a class="button button-primary" href="%s">Send to riders&hellip;</a></p>',
+			esc_url( admin_url( 'admin.php?page=pokbon-delivery&dispatch=' . $order_id ) )
 		);
 
-		echo '<p class="description" style="margin-top:.5em">Creates the delivery job immediately, whatever the '
-			. 'order status. Use it when goods arrive, or when an order needs a rider sooner than the normal flow.</p>';
+		echo '<p class="description">Creates the delivery job immediately, whatever the order status. Use it when '
+			. 'goods arrive, or when an order needs a rider sooner than the normal flow.</p>';
 	}
 
 	/**
@@ -146,24 +156,79 @@ class Pokbon_Delivery_Order_Panel {
 		return 'local';
 	}
 
+	/**
+	 * A likely zone from the order's own city and region text.
+	 *
+	 * Only ever a suggestion, pre-selected for the dispatcher to confirm. Text
+	 * matching is not good enough to dispatch a rider on by itself — "Accra"
+	 * covers every zone POKBON serves — but it removes most of the typing and
+	 * puts the right answer first in the list.
+	 */
+	private static function guess_zone( $order ): string {
+		$haystack = strtolower( implode( ' ', array_filter( [
+			(string) $order->get_shipping_city(),
+			(string) $order->get_shipping_address_1(),
+			(string) $order->get_shipping_address_2(),
+			(string) $order->get_billing_city(),
+			(string) $order->get_billing_address_1(),
+		] ) ) );
+
+		if ( $haystack === '' ) {
+			return '';
+		}
+
+		foreach ( Pokbon_Delivery_Settings::active_zones() as $zone ) {
+			// Match on the zone's own code and the first word of its name, so
+			// "Madina & environs" is found by "madina".
+			$needles = array_filter( [
+				strtolower( (string) $zone['code'] ),
+				strtolower( strtok( (string) $zone['name'], ' &,' ) ),
+			] );
+			foreach ( $needles as $needle ) {
+				if ( strlen( $needle ) > 2 && strpos( $haystack, $needle ) !== false ) {
+					return (string) $zone['code'];
+				}
+			}
+		}
+		return '';
+	}
+
 	/** What dispatching would produce, without producing it. */
-	private static function preview( $order ): array {
-		$out = [ 'error' => '', 'route' => '', 'buyer' => '', 'rider' => '', 'why' => '', 'vendors' => 0 ];
+	public static function preview( $order ): array {
+		$out = [
+			'error' => '', 'route' => '', 'buyer' => '', 'rider' => '', 'why' => '',
+			'vendors' => 0, 'hasPin' => false, 'needsZone' => false, 'suggested' => '',
+		];
 
 		$lat = (float) $order->get_meta( Pokbon_Delivery_Orders::META_LAT );
 		$lng = (float) $order->get_meta( Pokbon_Delivery_Orders::META_LNG );
 
-		if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
-			$out['error'] = 'This order has no delivery coordinates, so no rider could be routed to it. '
-				. 'It was placed before checkout captured a pin, or the buyer skipped it.';
-			return $out;
-		}
+		$has_pin = ! ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 );
+		$out['hasPin'] = $has_pin;
 
-		$to_zone = Pokbon_Delivery_Geo::resolve_zone( $lat, $lng );
-		if ( ! $to_zone ) {
-			$out['error'] = 'The delivery address is outside every active zone, so POKBON does not deliver '
-				. 'there yet. Add a zone that covers it, or widen an existing one.';
-			return $out;
+		if ( $has_pin ) {
+			$to_zone = Pokbon_Delivery_Geo::resolve_zone( $lat, $lng );
+			if ( ! $to_zone ) {
+				$out['error'] = 'The delivery address is outside every active zone, so POKBON does not deliver '
+					. 'there yet. Add a zone that covers it, or widen an existing one.';
+				return $out;
+			}
+		} else {
+			// Website orders carry no pin: a buyer there types a city and a
+			// street and the rider works it out. So a zone is chosen rather
+			// than derived, and the guess below is only a suggestion.
+			$chosen  = (string) $order->get_meta( Pokbon_Delivery_Orders::META_DISPATCH_ZONE );
+			$to_zone = $chosen !== '' ? Pokbon_Delivery_Settings::zone( $chosen ) : null;
+
+			if ( ! $to_zone ) {
+				$out['needsZone'] = true;
+				$out['suggested'] = self::guess_zone( $order );
+				$out['error']     = 'This order has no map pin, which is normal for a website order. '
+					. 'Choose the zone to deliver into below.';
+				return $out;
+			}
+			$lat = (float) $to_zone['lat'];
+			$lng = (float) $to_zone['lng'];
 		}
 
 		$from_code = (string) Pokbon_Delivery_Settings::get( 'default_pickup_zone' );

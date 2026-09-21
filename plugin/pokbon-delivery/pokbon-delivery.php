@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.3.1
+ * Version:           0.3.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,24 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.3.2 — website orders can be dispatched, and one nested form avoided.
+ *   - WEBSITE ORDERS CARRY NO MAP PIN. Only the app's checkout captures one,
+ *     so every web order would have been refused with "no coordinates". The
+ *     dispatch screen now asks which zone to deliver into, pre-selected from
+ *     the address text as a suggestion. That is not a degraded path: the
+ *     ladder prices by zone, so a chosen zone prices exactly as a pin in it
+ *     would, and the rider gets the typed address and the phone number, which
+ *     is how POKBON has always worked.
+ *   - The chosen zone is stored separately from the buyer's own pin, never
+ *     over it. The marketplace keeps those read-only on purpose.
+ *   - The order panel now LINKS to a dispatch screen instead of embedding a
+ *     form. WooCommerce renders meta boxes inside the order edit form, so the
+ *     button would have submitted that form instead — the same nested-form
+ *     mistake that made "Save connection" run the connection test.
+ *     check-plugin-forms.mjs now scans every plugin file and fails on a
+ *     button() in anything that renders into another screen's form.
+ *   - The dispatch screen refuses an order that already has jobs, rather than
+ *     quietly creating duplicates.
  * 0.3.1 — dispatch on arrival, for the orders that cannot dispatch themselves.
  *   A POKBON Delivery panel now sits on the order screen with a "Send to
  *   riders now" button. It works whatever the order status, which is what a

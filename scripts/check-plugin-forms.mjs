@@ -15,12 +15,26 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const PAGES = 'plugin/pokbon-delivery/admin/pages';
+// Every PHP file, not just the admin pages.
+//
+// The order panel is rendered INSIDE WooCommerce's own order form, so a
+// form emitted there is nested too — and it lives in includes/, which an
+// admin/pages-only scan never looked at. Anything that renders markup can
+// make this mistake, so everything is scanned.
+const ROOTS = ['plugin/pokbon-delivery/admin/pages', 'plugin/pokbon-delivery/includes', 'plugin/pokbon-delivery/admin'];
 
 const problems = [];
 
-for (const file of (await readdir(PAGES)).filter((f) => f.endsWith('.php'))) {
-  const src = await readFile(join(PAGES, file), 'utf8');
+const files = [];
+for (const root of ROOTS) {
+  for (const name of await readdir(root)) {
+    if (name.endsWith('.php')) files.push(join(root, name));
+  }
+}
+
+for (const path of [...new Set(files)]) {
+  const file = path.replace(/\\/g, '/').split('/').slice(-2).join('/');
+  const src = await readFile(path, 'utf8');
   const lines = src.split('\n');
 
   let openLine = 0; // 0 = not inside a form
@@ -54,6 +68,16 @@ for (const file of (await readdir(PAGES)).filter((f) => f.endsWith('.php'))) {
 
   if (openLine) {
     problems.push(`${file}: the form opened at line ${openLine} is never closed`);
+  }
+
+  // A file that renders a meta box or hooks into another screen has no form of
+  // its own, so any button() it emits lands inside somebody else's form.
+  const rendersIntoAnotherForm = /add_meta_box|woocommerce_admin_order_data|add_action\(\s*'edit_form/.test(src);
+  if (rendersIntoAnotherForm && /Pokbon_Delivery_Admin::button\s*\(/.test(src)) {
+    problems.push(
+      `${file}: button() in a file that renders into another screen's form — ` +
+        `WooCommerce and WordPress wrap meta boxes in their own <form>, so this one will be merged into it`,
+    );
   }
 }
 

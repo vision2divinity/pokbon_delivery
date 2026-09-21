@@ -31,6 +31,151 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 		<?php return; ?>
 	<?php endif; ?>
 
+	<?php
+	/*
+	 * Dispatching one order by hand.
+	 *
+	 * Reached from the POKBON Delivery panel on the order screen. It lives
+	 * here rather than there because a meta box is rendered inside
+	 * WooCommerce's own form, and a form inside a form is merged by the
+	 * browser — which would make this button submit the order screen. Here
+	 * there is no outer form, so there is room for a real one and for the
+	 * zone choice a website order needs.
+	 */
+	$dispatch_id = isset( $_GET['dispatch'] ) ? (int) $_GET['dispatch'] : 0;
+	if ( $dispatch_id > 0 ) :
+		$order = function_exists( 'wc_get_order' ) ? wc_get_order( $dispatch_id ) : null;
+		?>
+		<p>
+			<a href="<?php echo esc_url( remove_query_arg( 'dispatch' ) ); ?>">&larr; Back to the board</a>
+		</p>
+
+		<?php if ( ! $order ) : ?>
+			<div class="notice notice-error"><p>Order #<?php echo (int) $dispatch_id; ?> was not found.</p></div>
+			</div>
+			<?php return; ?>
+		<?php endif; ?>
+
+		<?php
+		$preview   = Pokbon_Delivery_Order_Panel::preview( $order );
+		$kind      = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
+		$zones_all = Pokbon_Delivery_Settings::active_zones();
+		$existing  = (array) $order->get_meta( Pokbon_Delivery_Orders::META_JOB_IDS );
+		?>
+
+		<h2>Send order #<?php echo (int) $dispatch_id; ?> to riders</h2>
+
+		<table class="widefat striped" style="max-width:60em">
+			<tr>
+				<th style="width:14em">Customer</th>
+				<td>
+					<?php echo esc_html( trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ) ); ?>
+					· <?php echo esc_html( $order->get_billing_phone() ); ?>
+				</td>
+			</tr>
+			<tr>
+				<th>Delivering to</th>
+				<td>
+					<?php
+					echo esc_html( trim( implode( ', ', array_filter( [
+						$order->get_shipping_address_1() ?: $order->get_billing_address_1(),
+						$order->get_shipping_address_2() ?: $order->get_billing_address_2(),
+						$order->get_shipping_city() ?: $order->get_billing_city(),
+						$order->get_shipping_state() ?: $order->get_billing_state(),
+					] ) ) ) );
+					?>
+				</td>
+			</tr>
+			<tr>
+				<th>Buyer chose</th>
+				<td>
+					<?php echo esc_html( $order->get_shipping_method() ?: 'nothing recorded' ); ?>
+					<?php if ( $kind === 'freight' ) : ?>
+						<br><span class="description">Shipped from abroad. Send this only once the goods have landed.</span>
+					<?php elseif ( $kind === 'pickup' ) : ?>
+						<br><span class="description">Store pickup. No rider is needed unless you decide to deliver it anyway.</span>
+					<?php endif; ?>
+				</td>
+			</tr>
+			<tr>
+				<th>Map pin</th>
+				<td>
+					<?php if ( ! empty( $preview['hasPin'] ) ) : ?>
+						Captured at checkout.
+					<?php else : ?>
+						None — normal for a website order. Choose a zone below.
+					<?php endif; ?>
+				</td>
+			</tr>
+		</table>
+
+		<?php if ( ! empty( $existing ) ) : ?>
+			<div class="notice notice-warning inline" style="margin-top:1em"><p>
+				This order already has <?php echo count( $existing ); ?> delivery job(s). Sending it again would
+				create duplicates, so the button is not offered. Cancel the existing job first if you need to redo it.
+			</p></div>
+			</div>
+			<?php return; ?>
+		<?php endif; ?>
+
+		<?php if ( ! empty( $preview['needsZone'] ) ) : ?>
+			<h3>Which zone?</h3>
+			<p class="description" style="max-width:52em">
+				A website order carries no map pin, which is how POKBON has always worked: the buyer types a city
+				and a street, and the rider finds it. Pick the zone so the route can be priced. The rider is shown
+				the full address and the customer's number, and the zone centre is only the map target.
+			</p>
+			<?php Pokbon_Delivery_Admin::form_open( 'dispatch_order' ); ?>
+				<input type="hidden" name="order_id" value="<?php echo (int) $dispatch_id; ?>">
+				<select name="dispatch_zone" required>
+					<option value="">Choose a zone…</option>
+					<?php foreach ( $zones_all as $zone ) : ?>
+						<option value="<?php echo esc_attr( $zone['code'] ); ?>"
+							<?php selected( $preview['suggested'] ?? '', $zone['code'] ); ?>>
+							<?php echo esc_html( $zone['name'] ); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+				<?php if ( ! empty( $preview['suggested'] ) ) : ?>
+					<span class="description">
+						Suggested from the address. Check it — text matching is a hint, not an answer.
+					</span>
+				<?php endif; ?>
+				<p><button type="submit" class="button button-primary">Price it and send to riders</button></p>
+			</form>
+		<?php elseif ( $preview['error'] !== '' ) : ?>
+			<div class="notice notice-error inline" style="margin-top:1em"><p>
+				<strong>Cannot dispatch.</strong> <?php echo esc_html( $preview['error'] ); ?>
+			</p></div>
+		<?php else : ?>
+			<h3>What this will do</h3>
+			<table class="widefat striped" style="max-width:60em">
+				<tr><th style="width:14em">Route</th><td><?php echo esc_html( $preview['route'] ); ?></td></tr>
+				<tr><th>Buyer pays</th><td><strong><?php echo esc_html( $preview['buyer'] ); ?></strong></td></tr>
+				<tr><th>Rider earns</th><td><?php echo esc_html( $preview['rider'] ); ?></td></tr>
+				<tr><th>Priced by</th><td><?php echo esc_html( $preview['why'] ); ?></td></tr>
+				<?php if ( (int) $preview['vendors'] > 1 ) : ?>
+					<tr>
+						<th>Vendors</th>
+						<td>
+							<?php echo (int) $preview['vendors']; ?> — that is
+							<?php echo (int) $preview['vendors']; ?> separate collections and
+							<?php echo (int) $preview['vendors']; ?> rider fees. The buyer sees one total.
+						</td>
+					</tr>
+				<?php endif; ?>
+			</table>
+
+			<?php Pokbon_Delivery_Admin::form_open( 'dispatch_order' ); ?>
+				<input type="hidden" name="order_id" value="<?php echo (int) $dispatch_id; ?>">
+				<p><button type="submit" class="button button-primary">Send to riders now</button></p>
+			</form>
+		<?php endif; ?>
+
+		</div>
+		<?php return; ?>
+	<?php endif; ?>
+
 	<?php if ( $detail_id !== '' ) :
 		$job = Pokbon_Delivery_API_Client::job( $detail_id );
 		?>

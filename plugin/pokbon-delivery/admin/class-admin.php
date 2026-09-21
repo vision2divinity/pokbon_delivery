@@ -364,6 +364,13 @@ class Pokbon_Delivery_Admin {
 					break;
 				}
 
+				// A zone chosen on the order panel, for an order with no pin.
+				$zone = strtoupper( sanitize_key( (string) wp_unslash( $_POST['dispatch_zone'] ?? '' ) ) );
+				if ( $zone !== '' ) {
+					$order->update_meta_data( Pokbon_Delivery_Orders::META_DISPATCH_ZONE, $zone );
+					$order->save();
+				}
+
 				$result = Pokbon_Delivery_Orders::create_jobs_for_order( $order );
 				if ( empty( $result['created'] ) ) {
 					$error = 'No job was created. ' . implode( ' ', $result['skipped'] );
