@@ -30,6 +30,17 @@ export interface PaymentIntent {
   expiresAt: string;
   reference?: string;
   paidAt?: string;
+  /**
+   * What Paystack asked the customer to do: `pay_offline` (approve on the
+   * handset) or `send_otp` (a code that has to go back to Paystack, which a
+   * doorstep cannot do). Recorded because "pending" on its own never said
+   * whether the customer had been given something they could act on.
+   */
+  stage?: string;
+  /** Paystack's own wording for the customer, kept verbatim. */
+  instruction?: string;
+  /** A checkout link, when the handset request cannot finish by itself. */
+  payUrl?: string;
 }
 
 export interface SettingsPayload {

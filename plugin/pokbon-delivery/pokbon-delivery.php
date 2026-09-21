@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.7
+ * Version:           0.4.8
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,24 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.8 — read what Paystack said, and tell the customer how to pay.
+ *   The charge reply carries data.status, which is the whole point of the
+ *   call: pay_offline means a request reaches the handset and we wait, while
+ *   send_otp means Paystack has texted a code that must be submitted back
+ *   through the API. This code read none of it and recorded "pending" either
+ *   way — so when Paystack asked for the code, nobody was listening, the
+ *   customer held an SMS with nowhere to type it, and the charge sat pending
+ *   until it expired.
+ *   Now the status and Paystack's own display_text are recorded on the order
+ *   and returned to the delivery service, and where the handset request
+ *   cannot finish by itself a checkout link is created and sent in the same
+ *   message. The link carries the order reference, so a payment made that way
+ *   reconciles itself — which a USSD menu asking only for an amount cannot.
+ *   create_payment_link() is split out of pay_by_link() so the prompt can
+ *   include a link without texting the customer twice about the same money.
+ *   Every message the plugin sends is now folded to what a GSM 7-bit SMS can
+ *   carry, matching the delivery service character for character, because
+ *   some of that text is Paystack's rather than ours.
  * 0.4.7 — 053 is MTN, and an SMS says GHS.
  *   A pay-on-delivery prompt to an 053 number was refused as an unknown
  *   mobile-money network, so the rider stood at the door waiting for a prompt

@@ -364,7 +364,17 @@ export class JobsService {
           // being asked to trust a broken message. Unicode would carry the
           // symbol but halves the characters per segment and doubles the
           // cost, for a glyph nobody needs in an SMS.
-          ? ` Have GHS ${fromMinor(job.amountDueMinor).toFixed(2)} ready on MoMo: you will get a prompt to approve, no cash.`
+          /*
+           * Deliberately not "you will get a prompt".
+           *
+           * Whether a request reaches the handset is Paystack's decision, not
+           * ours — some numbers come back needing a code submitted through the
+           * API instead, and no prompt ever appears. Promising one and not
+           * delivering it leaves a customer hunting through a MoMo menu that
+           * has nothing in it. The payment message that follows says what is
+           * actually happening for this charge, including a link if needed.
+           */
+          ? ` GHS ${fromMinor(job.amountDueMinor).toFixed(2)} to pay on MoMo, no cash - we will text you how to approve it.`
           : '';
       const message = `POKBON: your rider is at your door. Your delivery code is ${code}. Read it to the rider only.${amountLine}`;
 
@@ -636,7 +646,16 @@ export class JobsService {
           promptCount: { increment: 1 },
           paymentPendingSince: job.paymentPendingSince ?? new Date(),
         },
-        detail: { intentId: intent.intentId, reason, prompt: job.promptCount + 1 },
+        detail: {
+          intentId: intent.intentId,
+          reason,
+          prompt: job.promptCount + 1,
+          // What the customer was actually asked to do, and whether they were
+          // given a link they can use when the handset request cannot finish.
+          stage: intent.stage ?? null,
+          instruction: intent.instruction ?? null,
+          payUrl: intent.payUrl ?? null,
+        },
       }),
     );
   }

@@ -8,6 +8,8 @@
  * code — you only find out when a person reads the message — so they are
  * pinned here.
  */
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { toGsmSafe } from '../apps/api/dist/outbox/outbox.service.js';
 
 let failures = 0;
@@ -72,8 +74,47 @@ check(
   }
 }
 
+// ── and the plugin's copy must agree, character for character ───────
+//
+// The plugin sends some messages directly, including text that comes back
+// from Paystack, so the rules exist twice. Two copies of anything a customer
+// reads is a risk; this is the containment.
+{
+  const harness = fileURLToPath(new URL('./sms-text-php.php', import.meta.url));
+  const cases = [
+    'Have GH₵150.00 ready on MoMo',
+    'You earn ₵40.00',
+    'ready — no cash',
+    'the “blue” kiosk',
+    'on the way…',
+    'POKBON: approve GHS 31.00 for order #87616. Or pay here: https://checkout.paystack.com/abc123',
+    'POKBON: your rider is at your door. Your delivery code is 543024. Read it to the rider only.',
+    'Kwame ☺ Ø 中文 ₵5',
+  ];
+
+  let php;
+  try {
+    php = JSON.parse(execFileSync('php', [harness], { input: JSON.stringify(cases), encoding: 'utf8' }));
+  } catch (error) {
+    console.error(`FAIL could not run the PHP half: ${error.message}`);
+    process.exit(1);
+  }
+
+  cases.forEach((text, i) => {
+    const ts = toGsmSafe(text).text;
+    if (ts === php[i]) {
+      console.log(`ok   both agree: ${php[i].slice(0, 52)}`);
+    } else {
+      failures += 1;
+      console.error(`FAIL the two folders disagree on: ${text}`);
+      console.error(`     typescript: ${JSON.stringify(ts)}`);
+      console.error(`     php:        ${JSON.stringify(php[i])}`);
+    }
+  });
+}
+
 if (failures > 0) {
   console.error(`\n${failures} problem(s).`);
   process.exit(1);
 }
-console.log('\nSMS text OK.');
+console.log('\nSMS text OK: both implementations agree.');

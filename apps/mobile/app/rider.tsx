@@ -80,6 +80,40 @@ export default function RiderHome() {
     return () => clearInterval(t);
   }, [rider?.onDuty, load]);
 
+  /*
+   * Keep saying where you are, not just where you were when you started.
+   *
+   * Position used to be sent once, when the rider tapped "Go on duty", and
+   * never again. Jobs are offered to the nearest rider and the API will not
+   * offer to somebody whose last known position is hours old — quite rightly,
+   * since it has no idea whether they are still in Accra. So a rider who had
+   * been working all morning quietly stopped being offered anything, with
+   * nothing on their screen to explain it. Found when a job went straight to
+   * UNFULFILLED with a rider sitting on duty a kilometre away.
+   *
+   * A minute is slow enough not to matter to a battery and fresh enough that a
+   * rider is never skipped for staleness.
+   */
+  useEffect(() => {
+    if (!rider?.onDuty) return;
+
+    const report = async () => {
+      try {
+        const permission = await Location.getForegroundPermissionsAsync();
+        if (permission.status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        await riderApi.ping(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+      } catch {
+        // A missed fix is not worth telling the rider about; the next one is
+        // sixty seconds away and the screen has real work on it.
+      }
+    };
+
+    void report();
+    const t = setInterval(() => void report(), 60000);
+    return () => clearInterval(t);
+  }, [rider?.onDuty]);
+
   const toggleDuty = async () => {
     setBusy(true);
     setError('');

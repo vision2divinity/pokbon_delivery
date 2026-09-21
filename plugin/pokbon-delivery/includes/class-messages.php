@@ -58,7 +58,7 @@ class Pokbon_Delivery_Messages {
 			return 'The Zenoph API key is not set in POKBON App → Notifications.';
 		}
 
-		$sent = Pokbon_App_Sms::send( $phone, $message, array_merge(
+		$sent = Pokbon_App_Sms::send( $phone, self::gsm_safe( $message ), array_merge(
 			[ 'event' => 'delivery', 'source' => 'pokbon-delivery' ],
 			$context
 		) );
@@ -180,6 +180,65 @@ class Pokbon_Delivery_Messages {
 	 * asked rather than guessed at, because the wrong network means the prompt
 	 * never appears on their handset.
 	 */
+	/**
+	 * Fold a message to what a GSM 7-bit SMS can carry.
+	 *
+	 * The same rule as the API's outbox, applied here because the plugin also
+	 * sends directly — and some of that text comes from Paystack rather than
+	 * from us, so it cannot be relied upon to be plain. The cedi sign is the
+	 * one that bit: a customer was asked at their door to approve
+	 * "GH?150.00", because the symbol is not in the alphabet and the network
+	 * substitutes a question mark. Unicode would carry it at double the cost
+	 * per message, for a glyph nobody needs in an SMS.
+	 */
+	public static function gsm_safe( string $text ): string {
+		$text = strtr(
+			$text,
+			[
+				'₵' => 'GHS ',
+				'—' => '-',
+				'–' => '-',
+				'“' => '"',
+				'”' => '"',
+				'‘' => "'",
+				'’' => "'",
+				'…' => '...',
+				"Â " => ' ',
+			]
+		);
+
+		// The GSM 03.38 basic set, plus the extension characters. Written
+		// without escape sequences on purpose: the backslash and the line
+		// characters are exactly where a character list gets mangled.
+		$allowed = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+			. ' @£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ'
+			. '!"#¤%&' . "'" . '()*+,-./:;<=>?¡ÄÖÑÜ§¿äöñüà'
+			. '^{}[~]|' . chr( 92 );
+
+		/*
+		 * A lookup rather than mb_strpos(): mbstring is a PHP extension, not a
+		 * guarantee, and a host without it would turn this from a tidy-up into
+		 * a fatal on every single SMS the system sends.
+		 */
+		static $lookup = null;
+		if ( null === $lookup ) {
+			$lookup = array_flip( preg_split( '//u', $allowed, -1, PREG_SPLIT_NO_EMPTY ) );
+			$lookup[ chr( 10 ) ] = true;
+			$lookup[ chr( 13 ) ] = true;
+		}
+
+		$out = '';
+		foreach ( preg_split( '//u', $text, -1, PREG_SPLIT_NO_EMPTY ) as $ch ) {
+			if ( isset( $lookup[ $ch ] ) ) {
+				$out .= $ch;
+			}
+		}
+
+		// 'GHS ' for '₵' can leave 'GH GHS 150.00' where the text said GH.
+		$out = preg_replace( '/GH\s*GHS\s*/u', 'GHS ', $out );
+		return trim( preg_replace( '/ {2,}/', ' ', $out ) );
+	}
+
 	public static function momo_provider( string $e164 ): ?string {
 		$prefix = substr( str_replace( '+233', '', $e164 ), 0, 2 );
 

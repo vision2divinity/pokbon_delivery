@@ -38,6 +38,10 @@ class Pokbon_Delivery_Payments {
 
 	const META_INTENT     = '_pokbon_delivery_payment_intent';
 	const META_STATUS     = '_pokbon_delivery_payment_status';
+	/** What Paystack asked for: pay_offline, send_otp, success, failed. */
+	const META_STAGE       = '_pokbon_delivery_payment_stage';
+	/** Paystack's own wording for the customer, kept verbatim. */
+	const META_INSTRUCTION = '_pokbon_delivery_payment_instruction';
 	const META_JOB_ID     = '_pokbon_delivery_job_id';
 	const META_PROMPTS    = '_pokbon_delivery_prompt_count';
 	const META_PAID_AT    = '_pokbon_paid_on_delivery';
@@ -156,6 +160,22 @@ class Pokbon_Delivery_Payments {
 			return $response;
 		}
 
+		/*
+		 * What Paystack said to do next.
+		 *
+		 * The charge reply carries data.status, which is the whole point of
+		 * the call: `pay_offline` means the customer gets a request on their
+		 * handset and we wait, while `send_otp` means Paystack has texted them
+		 * a code that has to be submitted BACK to Paystack. This code used to
+		 * read none of it and record 'pending' either way — so when Paystack
+		 * asked for the code, nobody was listening, the customer got an SMS
+		 * with nowhere to type it, and the charge sat pending until it died.
+		 * display_text is Paystack's own wording for the customer.
+		 */
+		$data        = is_array( $response['data'] ?? null ) ? $response['data'] : [];
+		$stage       = strtolower( (string) ( $data['status'] ?? '' ) );
+		$instruction = trim( (string) ( $data['display_text'] ?? $data['message'] ?? '' ) );
+
 		if ( $previous !== '' && $previous !== $reference ) {
 			$order->update_meta_data( '_pokbon_paystack_reference_prev', $previous );
 		}
@@ -164,6 +184,8 @@ class Pokbon_Delivery_Payments {
 		$order->update_meta_data( self::META_INTENT, $intent_id );
 		$order->update_meta_data( self::META_JOB_ID, $job_id );
 		$order->update_meta_data( self::META_STATUS, 'pending' );
+		$order->update_meta_data( self::META_STAGE, $stage );
+		$order->update_meta_data( self::META_INSTRUCTION, $instruction );
 		$order->update_meta_data( self::META_PROMPTS, $prompts + 1 );
 		$order->save();
 
@@ -178,13 +200,59 @@ class Pokbon_Delivery_Payments {
 
 		$wait = (int) Pokbon_Delivery_Settings::get( 'payment_wait_minutes' );
 
+		/*
+		 * Where the handset request cannot finish on its own, put a link in
+		 * the customer's hand instead.
+		 *
+		 * `send_otp` asks for a code the customer would otherwise have to read
+		 * aloud to the rider standing in front of them, which is a payment
+		 * authorisation and not something to say out loud. Anything we do not
+		 * recognise gets the same treatment, because the alternative is a
+		 * customer holding an instruction nobody can act on. The link is tied
+		 * to the order, so a payment made through it reconciles itself —
+		 * which a USSD menu asking only for an amount cannot do.
+		 */
+		$pay_url = '';
+		if ( $stage !== '' && ! in_array( $stage, [ 'pay_offline', 'pending', 'success' ], true ) ) {
+			$link = self::create_payment_link( $intent_id );
+			if ( ! is_wp_error( $link ) && ! empty( $link['url'] ) ) {
+				$pay_url = (string) $link['url'];
+			}
+			Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_PAYMENT_PROMPTED, [
+				'order_id' => $order_id,
+				'job_id'   => $job_id,
+				'stage'    => $stage,
+				'fallback' => $pay_url !== '' ? 'link_sent' : 'link_failed',
+			] );
+		}
+
+		// One message, carrying whatever the customer actually has to do.
+		$lines = [ sprintf( 'POKBON: approve GHS %s for order #%d.', number_format( $amount_minor / 100, 2 ), $order_id ) ];
+		if ( $instruction !== '' ) {
+			$lines[] = $instruction;
+		} elseif ( $pay_url === '' ) {
+			$lines[] = 'Check your phone for the mobile money request and approve it.';
+		}
+		if ( $pay_url !== '' ) {
+			$lines[] = 'Or pay here: ' . $pay_url;
+		}
+		Pokbon_Delivery_Messages::sms( $phone, implode( ' ', $lines ), [
+			'purpose'  => 'payment_prompt',
+			'order_id' => $order_id,
+		] );
+
 		return [
-			'intentId'  => $intent_id,
-			'status'    => 'pending',
-			'amount'    => round( $amount_minor / 100, 2 ),
-			'currency'  => self::currency(),
-			'expiresAt' => gmdate( 'c', time() + max( 1, $wait ) * MINUTE_IN_SECONDS ),
-			'reference' => $reference,
+			'intentId'    => $intent_id,
+			'status'      => 'pending',
+			'amount'      => round( $amount_minor / 100, 2 ),
+			'currency'    => self::currency(),
+			'expiresAt'   => gmdate( 'c', time() + max( 1, $wait ) * MINUTE_IN_SECONDS ),
+			'reference'   => $reference,
+			// So the dispatcher and the job log can see what was actually
+			// asked of the customer, rather than a bare "pending".
+			'stage'       => $stage,
+			'instruction' => $instruction,
+			'payUrl'      => $pay_url,
 		];
 	}
 
@@ -236,7 +304,19 @@ class Pokbon_Delivery_Payments {
 	 * A hosted checkout is right here — the payer is not the buyer, may be on
 	 * any network, and may want to use a card.
 	 */
-	public static function pay_by_link( string $intent_id, string $phone ) {
+	/**
+	 * A Paystack checkout link for this order, created but not sent.
+	 *
+	 * Split out from pay_by_link() so the doorstep prompt can put the link
+	 * into its own single message. Before this, asking for a link always sent
+	 * a second SMS, so the prompt path could not offer one without texting
+	 * the customer twice about the same money.
+	 *
+	 * The link carries the order's reference, which is what makes a payment
+	 * made this way reconcile itself — the reason it beats a USSD menu that
+	 * asks only for an amount.
+	 */
+	public static function create_payment_link( string $intent_id ) {
 		$order = self::order_for_intent( $intent_id );
 		if ( ! $order ) {
 			return new WP_Error( 'no_intent', 'No order carries that payment intent.' );
@@ -249,11 +329,6 @@ class Pokbon_Delivery_Payments {
 		$already = self::confirm_existing_payment( $order, $secret );
 		if ( is_array( $already ) ) {
 			return $already;
-		}
-
-		$to = Pokbon_Delivery_Messages::normalise_ghana_phone( $phone );
-		if ( $to === '' ) {
-			return new WP_Error( 'bad_phone', 'That is not a valid Ghana mobile number.' );
 		}
 
 		$order_id  = $order->get_id();
@@ -287,17 +362,40 @@ class Pokbon_Delivery_Payments {
 		$order->update_meta_data( '_pokbon_paystack_reference', $reference );
 		$order->save();
 
+		return [
+			'url'       => $url,
+			'reference' => $reference,
+			'orderId'   => $order_id,
+			'amount'    => round( (float) $order->get_total(), 2 ),
+		];
+	}
+
+	public static function pay_by_link( string $intent_id, string $phone ) {
+		$to = Pokbon_Delivery_Messages::normalise_ghana_phone( $phone );
+		if ( $to === '' ) {
+			return new WP_Error( 'bad_phone', 'That is not a valid Ghana mobile number.' );
+		}
+
+		$link = self::create_payment_link( $intent_id );
+		if ( is_wp_error( $link ) ) {
+			return $link;
+		}
+		// Already settled: confirm_existing_payment() answers in full.
+		if ( empty( $link['url'] ) ) {
+			return $link;
+		}
+
 		$sent = Pokbon_Delivery_Messages::sms(
 			$to,
 			sprintf(
 				// GHS, not GH₵. The cedi sign is not in the GSM 7-bit alphabet
 				// and arrives as a question mark on the customer's phone.
 				'POKBON: pay GHS %s for order #%d here: %s',
-				number_format( (float) $order->get_total(), 2 ),
-				$order_id,
-				$url
+				number_format( (float) $link['amount'], 2 ),
+				$link['orderId'],
+				$link['url']
 			),
-			[ 'purpose' => 'pay_by_link', 'order_id' => $order_id ]
+			[ 'purpose' => 'pay_by_link', 'order_id' => $link['orderId'] ]
 		);
 
 		if ( ! $sent ) {
@@ -305,11 +403,11 @@ class Pokbon_Delivery_Payments {
 		}
 
 		Pokbon_Delivery_Audit::log( 'delivery.pay_by_link_sent', [
-			'order_id'  => $order_id,
-			'reference' => $reference,
+			'order_id'  => $link['orderId'],
+			'reference' => $link['reference'],
 		] );
 
-		return [ 'sent' => true, 'intentId' => $intent_id, 'reference' => $reference ];
+		return [ 'sent' => true, 'intentId' => $intent_id, 'reference' => $link['reference'] ];
 	}
 
 	// ─── reconciliation ─────────────────────────────────────────────────────
