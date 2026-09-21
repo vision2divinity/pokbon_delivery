@@ -450,7 +450,34 @@ export class JobsService {
       throw new ConflictException(`Cannot send a payment link from ${job.status}`);
     }
     await this.plugin.paymentLink(job.paymentIntentId, phone);
-    await this.prisma.$transaction((tx) => this.event(tx, jobId, 'payment.link_sent', `rider:${riderId}`, { to: phone }));
+
+    /*
+     * Record where it went, and whether that was somewhere else.
+     *
+     * A rider may legitimately send the link to a different phone — the number
+     * on the order is often wrong or switched off and the person at the door
+     * has another one. It stays allowed because forbidding it breaks the
+     * honest case, and the worst a wrong number can do is ask a stranger to
+     * pay an invoice they will ignore. But a rider who does this routinely is
+     * standing between a customer and their money, so it is written down with
+     * the number it was meant for.
+     *
+     * The delivery code is a different matter and is never redirected: it is
+     * the only proof the goods reached the buyer rather than the rider.
+     */
+    const redirected = phone !== job.dropoffContactPhone;
+    await this.prisma.$transaction((tx) =>
+      this.event(tx, jobId, 'payment.link_sent', `rider:${riderId}`, {
+        to: phone,
+        onOrder: job.dropoffContactPhone,
+        redirected,
+      }),
+    );
+    if (redirected) {
+      this.logger.warn(
+        `Job ${jobId}: rider ${riderId} sent the payment link to ${phone}, not the number on the order`,
+      );
+    }
     return job;
   }
 

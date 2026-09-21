@@ -199,6 +199,7 @@ export const FALLBACK: AppConfig = {
     payment: {
       waiting: 'Waiting for the customer to approve on their phone',
       promptAgain: 'Send the prompt again',
+      sendLink: 'Send the payment link',
       payByLink: 'Let someone else pay',
       paidBanner: 'PAID — hand over the item',
       notPaidYet: 'Not paid yet. Do not hand over the item.',

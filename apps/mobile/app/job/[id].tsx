@@ -43,8 +43,23 @@ export default function JobScreen() {
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState('');
   const [showFail, setShowFail] = useState(false);
+  /*
+   * Starts as the number on the order, and can be changed.
+   *
+   * An empty box made a rider retype a number they could already see, which
+   * is how digits get transposed at a doorstep. It is editable because the
+   * number on an order is often wrong or switched off and the person actually
+   * standing there has a different phone — but the change is recorded against
+   * the job, and it only ever moves the payment link. The delivery code still
+   * goes to the number on the order and nowhere else: that code is the only
+   * thing proving the goods reached the buyer rather than the rider.
+   */
   const [linkPhone, setLinkPhone] = useState('');
   const [showLink, setShowLink] = useState(false);
+
+  useEffect(() => {
+    if (job?.dropoff.contactPhone && linkPhone === '') setLinkPhone(job.dropoff.contactPhone);
+  }, [job?.dropoff.contactPhone]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -297,7 +312,7 @@ export default function JobScreen() {
                   keyboardType="phone-pad"
                 />
                 <Button
-                  title="Send the payment link"
+                  title={copy('payment', 'sendLink')}
                   kind="secondary"
                   onPress={() => run(() => jobsApi.payByLink(job.id, linkPhone.trim()))}
                   busy={busy}
@@ -319,6 +334,34 @@ export default function JobScreen() {
             onPress={() => run(() => jobsApi.promptAgain(job.id))}
             busy={busy}
           />
+          {/*
+            The link belongs here most of all. This is the screen a rider is
+            looking at when the request has already failed once, and it used
+            to offer them only the thing that just did not work.
+          */}
+          {feature('payByLink') ? (
+            showLink ? (
+              <>
+                <TextInput
+                  style={input}
+                  value={linkPhone}
+                  onChangeText={setLinkPhone}
+                  placeholder="024 000 0000"
+                  placeholderTextColor={c.textLight}
+                  keyboardType="phone-pad"
+                />
+                <Button
+                  title={copy('payment', 'sendLink')}
+                  kind="secondary"
+                  onPress={() => run(() => jobsApi.payByLink(job.id, linkPhone.trim()))}
+                  busy={busy}
+                  disabled={linkPhone.trim().length < 9}
+                />
+              </>
+            ) : (
+              <Button title={copy('payment', 'payByLink')} kind="ghost" onPress={() => setShowLink(true)} />
+            )
+          ) : null}
         </>
       ) : null}
 
