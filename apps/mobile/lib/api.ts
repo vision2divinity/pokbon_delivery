@@ -23,6 +23,7 @@ const COMPILED_BASE =
 
 let apiBase = COMPILED_BASE;
 
+
 /**
  * True for a build pointed at a dev host, which is what gates the in-app
  * address override. A production build ships https and never offers it.
@@ -49,6 +50,25 @@ export async function setApiBaseOverride(value: string | null): Promise<void> {
     else await SecureStore.deleteItemAsync(BASE_KEY);
   } catch {
     // Not fatal: the override holds for this run.
+  }
+}
+
+/**
+ * fetch with a deadline.
+ *
+ * Not AbortSignal.timeout(): Hermes does not implement it, so every request
+ * this app made threw "AbortSignal.timeout is not a function" before a single
+ * byte left the phone — and the catch below reported that to the rider as
+ * "No signal, or the delivery service cannot be reached". Somebody standing
+ * in full signal was told to go and find a mast.
+ */
+export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -100,12 +120,15 @@ async function refreshOnce(): Promise<boolean> {
     if (!refreshToken) return false;
 
     try {
-      const res = await fetch(`${apiBase}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-        signal: AbortSignal.timeout(15000),
-      });
+      const res = await fetchWithTimeout(
+        `${apiBase}/auth/refresh`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        },
+        15000,
+      );
       if (!res.ok) {
         await clearTokens();
         sessionEnded?.();
@@ -143,12 +166,11 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
       if (!token) throw new NotAuthenticated('No access token');
       headers.Authorization = `Bearer ${token}`;
     }
-    return fetch(`${apiBase}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    return fetchWithTimeout(
+      `${apiBase}${path}`,
+      { method, headers, body: body === undefined ? undefined : JSON.stringify(body) },
+      timeoutMs,
+    );
   };
 
   let response: Response;
@@ -156,6 +178,20 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
     response = await send();
   } catch (error) {
     if (error instanceof NotAuthenticated) throw error;
+    /*
+     * Only a real network failure is "offline".
+     *
+     * React Native throws TypeError for both a dead network and a mistake in
+     * this file, and treating every exception as offline is how a missing
+     * function sat here telling riders their signal was bad. Anything that is
+     * not recognisably the network is re-thrown so it reaches the screen with
+     * its own message.
+     */
+    const failure = error as Error;
+    const offline =
+      failure?.name === 'AbortError' ||
+      (failure instanceof TypeError && /network request failed/i.test(failure.message ?? ''));
+    if (!offline) throw error;
     throw new ApiError(0, 'offline');
   }
 

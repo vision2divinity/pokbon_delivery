@@ -17,6 +17,7 @@
  * it is only ever the third choice.
  */
 import Constants from 'expo-constants';
+import { fetchWithTimeout } from './api';
 import * as SecureStore from 'expo-secure-store';
 
 const CACHE_KEY = 'pkbd_app_config';
@@ -285,12 +286,13 @@ export function configSource(): ConfigSource {
  */
 export async function loadConfig(): Promise<ConfigSource> {
   try {
-    const response = await fetch(`${PLUGIN_BASE}/delivery/app-config`, {
-      headers: { Accept: 'application/json' },
-      // Short: this runs on launch and a rider should never watch a spinner
-      // because WordPress is slow. The cached copy is right there.
-      signal: AbortSignal.timeout(6000),
-    });
+    // Short deadline: this runs on launch and a rider should never watch a
+    // spinner because WordPress is slow. The cached copy is right there.
+    const response = await fetchWithTimeout(
+      `${PLUGIN_BASE}/delivery/app-config`,
+      { headers: { Accept: 'application/json' } },
+      6000,
+    );
     if (response.ok) {
       const live = (await response.json()) as AppConfig;
       if (live && live.theme && live.copy) {
