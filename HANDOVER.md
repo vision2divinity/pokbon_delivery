@@ -103,6 +103,20 @@ Updated as work lands. Newest first.
     WordPress; `GET /dev/outbox` shows what would have been sent.
   - `packages/shared/src/lifecycle.ts` is the transition table. `packages/shared/src/settings.ts` is every
     tunable and its launch default. `apps/api/src/jobs/jobs.service.ts` is the only writer of job status.
+- **2026-09-21** — **The rider app exists** in `apps/mobile` (Expo, 11 files, typechecks clean). Sign-in by SMS
+  code, the application and its waiting/refused states, a home screen whose cards and order come from the
+  server, and the full doorstep flow. **It ships as a shell and asks the plugin what to be** — colours, every
+  word, feature flags and the home layout come from `/delivery/app-config`. Read `apps/mobile/README.md`,
+  which also lists what is not built (photos, push, requester mode) and that no rider has held it.
+- **2026-09-21** — **The plugin is installed on pokbongroup.com and the contract is proven against it.**
+  A signed call from the API is verified by WordPress and returns the six zones. An admin edit reaches the
+  API: Madina→Circle at rider 30 / buyer 40 quotes exactly that, and unpriced routes answer "not served".
+  - Two bugs only a real install could find, both fixed: nested admin forms meant **Save silently ran the
+    connection test**, and the API **logged "Pulled settings" while discarding them** because the seed script
+    had stamped a timestamp version the plugin's counter could never beat.
+  - **The tunnel is not a usable test bed on this network.** cloudflared drops with QUIC timeouts, localtunnel
+    returns 408s. The API→plugin direction needs no tunnel and carries SMS, payments and callbacks; only the
+    admin screens that read from the API need one. Host the API properly before relying on those.
 - **2026-09-20** — **The three known plugin gaps are closed.**
   - The in-app copy now goes out as a real per-user push (`Pokbon_App_Push_Endpoint::send_to_user`), because the
     app's inbox is filled by push rather than a server table. **The delivery code is kept out of it on both

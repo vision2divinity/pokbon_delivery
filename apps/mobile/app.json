@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "POKBON Delivery",
+    "slug": "pokbon-delivery",
+    "scheme": "pokbondelivery",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.pokbongroup.delivery",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "POKBON Delivery uses your location while you are on duty to offer you nearby jobs and to show the customer where their delivery is."
+        }
+      ]
+    ],
+    "extra": {
+      "//": "Both addresses are overridable at runtime; see lib/api.ts. The plugin address is where the app asks what to be.",
+      "pluginBaseUrl": "https://pokbongroup.com/wp-json/pokbon/v1",
+      "apiBaseUrl": "http://localhost:3001"
+    }
+  }
+}

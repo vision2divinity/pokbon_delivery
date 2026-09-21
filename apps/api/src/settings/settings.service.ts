@@ -9,6 +9,22 @@ import { PrismaService } from '../prisma/prisma.service';
 const SYNC_VERSION_KEY = '_sync_version';
 
 /**
+ * Keys the plugin owns and this service has no use for.
+ *
+ * They are stored so a sync round-trips intact, but they must not be warned
+ * about: five warnings on every boot is how people learn to ignore warnings,
+ * and the next one will be real.
+ */
+const PLUGIN_ONLY_KEYS = new Set([
+  'auto_create_jobs',
+  'default_pickup_zone',
+  'default_pickup_address',
+  'default_pickup_contact',
+  'default_pickup_phone',
+  'rename_cod_label',
+]);
+
+/**
  * The settings cache. PRD § 1a and § 12b.
  *
  * The WordPress plugin is the source of truth. It pushes on save; the API
@@ -135,8 +151,11 @@ export class SettingsService implements OnModuleInit {
 
       if (payload.settings) {
         for (const [key, value] of Object.entries(payload.settings)) {
-          if (!(key in SETTING_DEFAULTS)) {
-            this.logger.warn(`Settings sync carried unknown key "${key}"; stored but unused`);
+          if (!(key in SETTING_DEFAULTS) && !PLUGIN_ONLY_KEYS.has(key)) {
+            this.logger.warn(
+              `Settings sync carried an unknown key "${key}". It is stored but nothing reads it — ` +
+                `either the plugin is newer than this service, or the key is a typo.`,
+            );
           }
           await tx.setting.upsert({
             where: { key },
