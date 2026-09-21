@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.2
+ * Version:           0.4.3
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,23 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.3 — found by dispatching a real order.
+ *   - Cash on delivery was being sent to the riders as PREPAID with nothing
+ *     to collect. is_paid() asks whether an order has reached a paid STATUS,
+ *     and WooCommerce puts a cash order into processing the moment it is
+ *     placed — so it answered true for exactly the orders where the cash is
+ *     still owed. A rider would have handed the goods over for free. The
+ *     question is now get_date_paid(), which is only set when money was
+ *     actually taken.
+ *   - A website buyer's delivery instructions never reached the rider. The
+ *     app writes its note to its own meta key; what somebody types into
+ *     "Order notes" at checkout lives in WooCommerce's customer note, and
+ *     that is where the landmark and the gate colour actually are.
+ *   - The rider is now given the shipping name and phone, falling back to
+ *     billing. Whoever is at the door, not whoever paid.
+ *   - The dispatch screen no longer dies with a white "critical error" page.
+ *     Whatever breaks while pricing a route is now said on the screen, and
+ *     logged, because a dispatcher who cannot dispatch needs to know why.
  * 0.4.2 — every order was claiming to be dispatched.
  *   `(array) $order->get_meta(...)` looks like it turns a missing value into
  *   an empty array. It does not: an absent meta value is '', and (array) ''

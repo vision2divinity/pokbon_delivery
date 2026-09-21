@@ -300,9 +300,43 @@ class Pokbon_Delivery_Orders {
 			$lng = (float) $picked['lng'];
 		}
 
-		$phone = Pokbon_Delivery_Messages::normalise_ghana_phone( (string) $order->get_billing_phone() );
+		// Whoever is receiving it, not whoever paid. On most orders these are
+		// the same person; when they are not, the rider needs the one standing
+		// at the door.
+		$raw_phone = '';
+		if ( method_exists( $order, 'get_shipping_phone' ) ) {
+			$raw_phone = (string) $order->get_shipping_phone();
+		}
+		if ( $raw_phone === '' ) {
+			$raw_phone = (string) $order->get_billing_phone();
+		}
+
+		$phone = Pokbon_Delivery_Messages::normalise_ghana_phone( $raw_phone );
 		if ( $phone === '' ) {
 			return null; // No number means no code and no payment prompt.
+		}
+
+		$name = trim( $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name() );
+		if ( $name === '' ) {
+			$name = trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() );
+		}
+
+		/*
+		 * What the buyer said about finding them.
+		 *
+		 * The app writes its own note to META_NOTE. A website order has no
+		 * such meta — what the buyer typed sits in WooCommerce's own customer
+		 * note field, and on this marketplace that box is labelled "Order
+		 * notes" and is where people put the landmark and the gate colour.
+		 * Reading only the app's key silently threw that away on every
+		 * website order, which is the one place the rider needs it most.
+		 */
+		$note = trim( (string) $order->get_meta( self::META_NOTE ) );
+		if ( $note === '' ) {
+			$note = trim( (string) $order->get_customer_note() );
+		}
+		if ( ! $has_pin ) {
+			$note = trim( $note . ' [No map pin on this order — go by the address and call the customer.]' );
 		}
 
 		return [
@@ -311,11 +345,8 @@ class Pokbon_Delivery_Orders {
 			'address'      => trim( $order->get_shipping_address_1() . ' ' . $order->get_shipping_city() ) ?: $order->get_billing_address_1(),
 			'zoneCode'     => $zone,
 			'ghanaPost'    => (string) $order->get_meta( self::META_GHANAPOST ),
-			'note'         => trim(
-				(string) $order->get_meta( self::META_NOTE )
-				. ( $has_pin ? '' : ' [No map pin on this order — go by the address and call the customer.]' )
-			),
-			'contactName'  => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
+			'note'         => $note,
+			'contactName'  => $name,
 			'contactPhone' => $phone,
 		];
 	}
@@ -575,7 +606,24 @@ class Pokbon_Delivery_Orders {
 	 */
 	public static function is_pay_on_delivery( $order ): bool {
 		$method = (string) $order->get_payment_method();
-		return in_array( $method, [ 'cod', 'pokbon_cod' ], true ) && ! $order->is_paid();
+		if ( ! in_array( $method, [ 'cod', 'pokbon_cod' ], true ) ) {
+			return false;
+		}
+
+		/*
+		 * Deliberately not is_paid().
+		 *
+		 * is_paid() asks whether the order has reached a paid *status*, and
+		 * WooCommerce counts `processing` as one. A cash-on-delivery order is
+		 * moved to processing the moment it is placed, with no money taken —
+		 * so is_paid() answered true for exactly the orders where cash is
+		 * still owed, every job left as PREPAID with nothing to collect, and
+		 * a rider would have handed the goods over for free.
+		 *
+		 * get_date_paid() is only set when a payment was actually captured,
+		 * which is the question being asked.
+		 */
+		return $order->get_date_paid() === null;
 	}
 
 	private static function buyer_note_for( string $status, array $payload ): string {

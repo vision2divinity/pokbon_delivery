@@ -57,10 +57,44 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 		<?php endif; ?>
 
 		<?php
-		$preview   = Pokbon_Delivery_Order_Panel::preview( $order );
-		$kind      = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
-		$zones_all = Pokbon_Delivery_Settings::active_zones();
-		$existing  = Pokbon_Delivery_Orders::job_ids_for( $order );
+		/*
+		 * A dispatcher stuck on a white "critical error" page cannot dispatch
+		 * and cannot tell anyone why. Whatever breaks while working out the
+		 * route, it is better said out loud on this screen than left to the
+		 * site admin's inbox.
+		 */
+		$fatal = null;
+		try {
+			$preview   = Pokbon_Delivery_Order_Panel::preview( $order );
+			$kind      = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
+			$zones_all = Pokbon_Delivery_Settings::active_zones();
+			$existing  = Pokbon_Delivery_Orders::job_ids_for( $order );
+		} catch ( Throwable $e ) {
+			$fatal     = $e;
+			$preview   = [ 'error' => '', 'route' => '', 'buyer' => '', 'rider' => '', 'why' => '', 'vendors' => 0, 'hasPin' => false, 'needsZone' => false, 'suggested' => '' ];
+			$kind      = 'local';
+			$zones_all = [];
+			$existing  = [];
+		}
+
+		if ( $fatal !== null ) :
+			Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_JOB_CREATE_FAILED, [
+				'order_id' => $dispatch_id,
+				'reason'   => 'dispatch_screen_error',
+				'error'    => $fatal->getMessage(),
+			] );
+			?>
+			<div class="notice notice-error"><p>
+				<strong>This order cannot be priced right now.</strong><br>
+				<?php echo esc_html( $fatal->getMessage() ); ?>
+				<br><span class="description">
+					<?php echo esc_html( basename( $fatal->getFile() ) . ':' . $fatal->getLine() ); ?>
+				</span>
+			</p></div>
+			</div>
+			<?php
+			return;
+		endif;
 		?>
 
 		<h2>Send order #<?php echo (int) $dispatch_id; ?> to riders</h2>
