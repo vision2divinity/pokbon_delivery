@@ -69,12 +69,40 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 			$kind      = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
 			$zones_all = Pokbon_Delivery_Settings::active_zones();
 			$existing  = Pokbon_Delivery_Orders::job_ids_for( $order );
+
+			/*
+			 * A cancelled job is not a reason to refuse.
+			 *
+			 * The order meta only records which jobs were created, not what
+			 * became of them, and the delivery service is the one that knows.
+			 * Blocking on the bare list meant that cancelling a job — the
+			 * exact thing the old message told you to do — still left the
+			 * order permanently undispatchable.
+			 *
+			 * If the service cannot be reached the block stays, deliberately:
+			 * not knowing whether a rider is already carrying this is a much
+			 * worse position than waiting a minute.
+			 */
+			$blocking = [];
+			foreach ( $existing as $job_id ) {
+				$job = Pokbon_Delivery_API_Client::job( $job_id );
+				if ( is_wp_error( $job ) ) {
+					$blocking[ $job_id ] = 'could not be checked';
+					continue;
+				}
+				$job_status = strtoupper( (string) ( $job['status'] ?? '' ) );
+				if ( $job_status === 'CANCELLED' ) {
+					continue;
+				}
+				$blocking[ $job_id ] = strtolower( str_replace( '_', ' ', $job_status ) );
+			}
 		} catch ( Throwable $e ) {
 			$fatal     = $e;
 			$preview   = [ 'error' => '', 'route' => '', 'buyer' => '', 'rider' => '', 'why' => '', 'vendors' => 0, 'hasPin' => false, 'needsZone' => false, 'suggested' => '' ];
 			$kind      = 'local';
 			$zones_all = [];
 			$existing  = [];
+			$blocking  = [];
 		}
 
 		if ( $fatal !== null ) :
@@ -143,13 +171,29 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 			</tr>
 		</table>
 
-		<?php if ( ! empty( $existing ) ) : ?>
-			<div class="notice notice-warning inline" style="margin-top:1em"><p>
-				This order already has <?php echo count( $existing ); ?> delivery job(s). Sending it again would
-				create duplicates, so the button is not offered. Cancel the existing job first if you need to redo it.
-			</p></div>
+		<?php if ( ! empty( $blocking ) ) : ?>
+			<div class="notice notice-warning inline" style="margin-top:1em">
+				<p>
+					This order already has <?php echo count( $blocking ); ?> live delivery job(s), so the button is
+					not offered — sending it again would put two riders on one parcel. Cancel what is there first
+					if you need to redo it.
+				</p>
+				<ul style="margin:0 0 .5em 2em;list-style:disc">
+					<?php foreach ( $blocking as $job_id => $job_status ) : ?>
+						<li>
+							<code><?php echo esc_html( substr( $job_id, 0, 8 ) ); ?></code>
+							— <?php echo esc_html( $job_status ); ?>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+			</div>
 			</div>
 			<?php return; ?>
+		<?php elseif ( ! empty( $existing ) ) : ?>
+			<div class="notice notice-info inline" style="margin-top:1em"><p>
+				This order has been dispatched before and every one of those jobs was cancelled, so it can be
+				sent again.
+			</p></div>
 		<?php endif; ?>
 
 		<?php if ( ! empty( $preview['needsZone'] ) ) : ?>

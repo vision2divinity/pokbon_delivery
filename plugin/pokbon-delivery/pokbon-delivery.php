@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.4
+ * Version:           0.4.5
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,16 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.5 — a cancelled job no longer blocks re-dispatch.
+ *   The dispatch screen refused any order that had ever been dispatched, and
+ *   told you to cancel the existing job first — which did not help, because
+ *   it was reading the order's list of job ids and not what became of them.
+ *   Cancelling left the order permanently undispatchable.
+ *   It now asks the delivery service for each job's status, ignores the
+ *   cancelled ones, and names the live ones with their status instead of
+ *   giving a count. If the service cannot be reached the block stays: not
+ *   knowing whether a rider is already carrying the parcel is worse than
+ *   waiting a minute.
  * 0.4.4 — the geography class was never loaded.
  *   includes/class-geo.php sat there unreferenced: the bootstrap never
  *   required it, so Pokbon_Delivery_Geo did not exist at runtime and every
