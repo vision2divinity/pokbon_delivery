@@ -204,6 +204,9 @@ model Job {
   pickupZoneCode     String? @map("pickup_zone_code")
   pickupContactName  String  @default("") @map("pickup_contact_name")
   pickupContactPhone String  @map("pickup_contact_phone")
+  /// Free text from whoever booked it: how to find the collection point, who
+  /// to ask for, which gate. The rider sees it; it is not used for routing.
+  pickupNote         String? @map("pickup_note")
 
   dropoffLat          Float   @map("dropoff_lat")
   dropoffLng          Float   @map("dropoff_lng")
@@ -216,6 +219,10 @@ model Job {
 
   /// SMALL | MEDIUM | LARGE
   parcelSize         String @map("parcel_size")
+  /// What the item is, in the sender's own words. A rider collecting
+  /// "two bags of cement" packs differently from one collecting "a laptop",
+  /// and a courier who cannot see the item before accepting will decline.
+  parcelDescription  String? @map("parcel_description")
   itemCount          Int    @default(1) @map("item_count")
   declaredValueMinor Int    @default(0) @map("declared_value_minor")
 

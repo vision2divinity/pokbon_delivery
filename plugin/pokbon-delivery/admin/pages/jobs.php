@@ -63,6 +63,15 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 					</td>
 				</tr>
 				<tr>
+					<th>What it is</th>
+					<td>
+						<?php echo esc_html( $job['parcelDescription'] ?: '—' ); ?>
+						<?php if ( ! empty( $job['pickupNote'] ) ) : ?>
+							<br><span class="description">Collection: <?php echo esc_html( $job['pickupNote'] ); ?></span>
+						<?php endif; ?>
+					</td>
+				</tr>
+				<tr>
 					<th>Money</th>
 					<td>
 						Buyer <strong>GH₵<?php echo esc_html( number_format( (float) ( $money['buyerPrice'] ?? 0 ), 2 ) ); ?></strong>,

@@ -188,6 +188,11 @@ $last_sync  = Pokbon_Delivery_Settings::last_sync();
 					<input name="default_pickup_phone" type="text" placeholder="0244 000 000"
 						value="<?php echo esc_attr( $settings['default_pickup_phone'] ); ?>">
 				</p>
+				<p>
+					<input name="default_pickup_note" type="text" class="regular-text"
+						placeholder="Which gate, who to ask for"
+						value="<?php echo esc_attr( $settings['default_pickup_note'] ); ?>">
+				</p>
 				<p class="description">
 					Where a rider collects when the vendor has no location of its own. The rider is shown
 					this address and phone number.

@@ -136,6 +136,12 @@ export default function RiderHome() {
           <H2>{copy('offer', 'title')}</H2>
           {offers.map((offer) => (
             <Card key={offer.offerId}>
+              {/* What it is comes first: a courier who cannot see the item
+                  before accepting will decline, or accept and then find they
+                  cannot carry it. */}
+              {offer.parcel.description ? (
+                <Field label="What it is" value={offer.parcel.description} />
+              ) : null}
               <Field label="Pick up" value={`${offer.pickup.zoneCode ?? ''} · ${offer.pickup.address}`} />
               <Field label="Deliver to" value={`${offer.dropoff.zoneCode ?? ''} · ${offer.dropoff.address}`} />
               <Field label={copy('offer', 'feeLabel')} value={money(offer.earnings.riderFee + offer.earnings.uplift)} />

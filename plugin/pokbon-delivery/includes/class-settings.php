@@ -74,6 +74,9 @@ class Pokbon_Delivery_Settings {
 			'default_pickup_address'  => '',
 			'default_pickup_contact'  => 'POKBON',
 			'default_pickup_phone'    => '',
+			// Standing instructions for the collection point: which gate, who to
+			// ask for. Shown to the rider on the job.
+			'default_pickup_note'     => '',
 			// Flip on the day the first rider goes out, not before: until then
 			// there really is cash and the checkout would be lying (PRD § 12a).
 			'rename_cod_label'        => false,

@@ -99,6 +99,11 @@ class Pokbon_Delivery_Orders {
 				'dropoff'     => $dropoff,
 				'parcel'      => [
 					'sizeClass'     => 'small',
+					// What the rider is actually carrying, in the buyer's own
+					// order. Someone collecting "2 x cement" packs differently
+					// from someone collecting "1 x phone case", and a courier
+					// who cannot see the item before accepting will decline.
+					'description'   => self::parcel_description( $order, $vendor_id ),
 					'declaredValue' => (float) $order->get_total(),
 					'itemCount'     => max( 1, (int) $items ),
 				],
@@ -309,6 +314,7 @@ class Pokbon_Delivery_Orders {
 			'lng'          => $lng,
 			'address'      => sanitize_text_field( (string) ( $candidate['address'] ?? '' ) ),
 			'zoneCode'     => $zone,
+			'note'         => sanitize_text_field( (string) ( $candidate['note'] ?? '' ) ),
 			'contactName'  => sanitize_text_field( (string) ( $candidate['contactName'] ?? '' ) ),
 			'contactPhone' => $phone,
 		];
@@ -425,6 +431,7 @@ class Pokbon_Delivery_Orders {
 			'lng'          => (float) $zone['lng'],
 			'zoneCode'     => (string) $zone['code'],
 			'address'      => (string) ( Pokbon_Delivery_Settings::get( 'default_pickup_address' ) ?: $zone['name'] ),
+			'note'         => (string) Pokbon_Delivery_Settings::get( 'default_pickup_note' ),
 			'contactName'  => (string) ( Pokbon_Delivery_Settings::get( 'default_pickup_contact' ) ?: 'POKBON' ),
 			'contactPhone' => (string) Pokbon_Delivery_Settings::get( 'default_pickup_phone' ),
 		];
@@ -450,6 +457,39 @@ class Pokbon_Delivery_Orders {
 		}
 
 		return empty( $vendors ) ? [ 0 => 1 ] : $vendors;
+	}
+
+	/**
+	 * What the rider is carrying, from the order itself.
+	 *
+	 * Only this vendor's lines, because a multi-vendor order is several
+	 * deliveries and a rider should not be told about a parcel they are not
+	 * collecting. Kept short: this is read on a phone, at a counter, in a
+	 * hurry, and a wall of text is the same as no text.
+	 */
+	private static function parcel_description( $order, $vendor_id ): string {
+		$parts = [];
+
+		foreach ( $order->get_items() as $item ) {
+			$product_id = (int) $item->get_product_id();
+			$owner      = (int) apply_filters(
+				'pokbon_delivery_product_vendor',
+				get_post_field( 'post_author', $product_id ),
+				$product_id,
+				$item
+			);
+			// Vendor 0 is the "no vendor concept" fallback; it takes everything.
+			if ( (int) $vendor_id !== 0 && $owner !== (int) $vendor_id ) {
+				continue;
+			}
+			$parts[] = sprintf( '%d x %s', (int) $item->get_quantity(), $item->get_name() );
+			if ( count( $parts ) >= 5 ) {
+				$parts[] = '…';
+				break;
+			}
+		}
+
+		return mb_substr( sanitize_text_field( implode( ', ', $parts ) ), 0, 500 );
 	}
 
 	/**

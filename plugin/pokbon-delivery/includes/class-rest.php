@@ -7,6 +7,13 @@
  * thing proving it is the shared secret. So `permission_callback` verifies the
  * signature and nothing reaches a handler without it.
  *
+ * NO ROUTE HERE RETURNS A 5xx. EasyWP and Cloudflare both replace a 5xx from
+ * the origin with their own HTML error page, so a carefully worded JSON error
+ * arrives at the Delivery API as "HTTP 502: <!DOCTYPE html>" and the real
+ * reason is lost. That cost an hour on the first live test. Anything this
+ * plugin knows about — a switched-off SMS gateway, a refused charge — is a
+ * 409 carrying JSON, which passes through untouched.
+ *
  * The delivery code never appears in any route in this file. It is generated
  * by the API, carried to the buyer inside an SMS body this plugin relays
  * without inspecting, and compared by the API. This plugin could not leak it
@@ -93,15 +100,19 @@ class Pokbon_Delivery_REST {
 				return new WP_Error( 'bad_request', 'Both to and message are required.', [ 'status' => 400 ] );
 			}
 
-			$sent = Pokbon_Delivery_Messages::sms( $to, $message, [
-				'purpose'  => (string) ( $body['purpose'] ?? 'delivery' ),
-				'job_id'   => (string) ( $body['jobId'] ?? '' ),
+			$reason = Pokbon_Delivery_Messages::sms_with_reason( $to, $message, [
+				'purpose' => (string) ( $body['purpose'] ?? 'delivery' ),
+				'job_id'  => (string) ( $body['jobId'] ?? '' ),
 			] );
 
-			// A failed code SMS is the one the API must retry, so say so
-			// plainly with a status it will act on rather than a quiet false.
-			if ( ! $sent ) {
-				return new WP_Error( 'sms_failed', 'The SMS gateway did not accept the message.', [ 'status' => 502 ] );
+			// A failed code SMS leaves a rider at a door, so the reason travels
+			// back rather than a bare failure.
+			if ( $reason !== '' ) {
+				Pokbon_Delivery_Audit::log( 'delivery.sms_failed', [
+					'purpose' => (string) ( $body['purpose'] ?? '' ),
+					'reason'  => $reason,
+				] );
+				return new WP_Error( 'sms_failed', $reason, [ 'status' => 409 ] );
 			}
 
 			return [ 'sent' => true ];
@@ -148,7 +159,7 @@ class Pokbon_Delivery_REST {
 				return new WP_Error(
 					$intent->get_error_code(),
 					$intent->get_error_message(),
-					[ 'status' => 502 ]
+					[ 'status' => 409 ]
 				);
 			}
 
@@ -175,7 +186,7 @@ class Pokbon_Delivery_REST {
 			$result = Pokbon_Delivery_Payments::pay_by_link( (string) $request->get_param( 'intent' ), $phone );
 
 			if ( is_wp_error( $result ) ) {
-				return new WP_Error( $result->get_error_code(), $result->get_error_message(), [ 'status' => 502 ] );
+				return new WP_Error( $result->get_error_code(), $result->get_error_message(), [ 'status' => 409 ] );
 			}
 			return $result;
 		} );

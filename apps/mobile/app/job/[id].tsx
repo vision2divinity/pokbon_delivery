@@ -179,6 +179,18 @@ export default function JobScreen() {
         </Row>
       </Card>
 
+      {/* What the rider is carrying, and how to find the collection point.
+          Both come from whoever booked it and are shown before anything
+          else that needs a decision. */}
+      <Card>
+        <Field
+          label="What you are carrying"
+          value={job.parcel.description || `${job.parcel.itemCount} item(s), ${job.parcel.size.toLowerCase()}`}
+        />
+        <Field label="Collect from" value={job.pickup.address} />
+        {job.pickup.note ? <Field label="Collection note" value={job.pickup.note} /> : null}
+      </Card>
+
       <Card>
         <Field label="You earn" value={money(job.earnings.total)} />
         {job.earnings.uplift > 0 ? <Notice tone="success">{copy('earnings', 'upliftNote')}</Notice> : null}

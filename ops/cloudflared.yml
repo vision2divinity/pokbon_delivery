@@ -1,0 +1,29 @@
+# POKBON Delivery — named Cloudflare tunnel for development.
+#
+# WHY A FILE OF ITS OWN. This machine already has a machine-wide
+# ~/.cloudflared/config.yml for the unrelated "qa-platform" tunnel, and
+# cloudflared loads it automatically. Every command run without --config
+# silently picked that tunnel up instead: a quick tunnel came up bound to the
+# wrong credentials and 404'd, and `tunnel route dns` pointed
+# delivery-dev.pokbongroup.com at qa-platform until it was corrected with
+# --overwrite-dns. So every command for this project passes --config <this>.
+#
+# Run:
+#   cloudflared --config ops/cloudflared.yml tunnel run
+#
+# The API must already be listening on 3001.
+
+tunnel: pokbon-delivery
+credentials-file: C:\Users\franc\.cloudflared\5600e976-013d-4fe8-808a-edb5d2a11f2c.json
+
+# This network drops cloudflared's UDP/QUIC connection repeatedly
+# ("no recent network activity"), so TCP is pinned rather than negotiated.
+protocol: http2
+edge-ip-version: "4"
+
+ingress:
+  - hostname: delivery-dev.pokbongroup.com
+    service: http://localhost:3001
+  # Anything else reaching this tunnel is not ours. Answering 404 rather than
+  # forwarding means a stray hostname can never be pointed at the API.
+  - service: http_status:404

@@ -224,8 +224,16 @@ export interface RiderJob {
   id: string;
   status: string;
   paymentMethod: 'PREPAID' | 'PAY_ON_DELIVERY';
-  parcel: { size: string; itemCount: number };
-  pickup: { lat: number; lng: number; address: string; zoneCode: string | null; contactName: string; contactPhone: string };
+  parcel: { size: string; itemCount: number; description: string | null };
+  pickup: {
+    lat: number;
+    lng: number;
+    address: string;
+    zoneCode: string | null;
+    note: string | null;
+    contactName: string;
+    contactPhone: string;
+  };
   dropoff: {
     lat: number;
     lng: number;
@@ -250,7 +258,7 @@ export interface RiderOffer {
   distanceMetres: number;
   pickup: { zoneCode: string | null; address: string };
   dropoff: { zoneCode: string | null; address: string };
-  parcel: { size: string; itemCount: number };
+  parcel: { size: string; itemCount: number; description: string | null };
   paymentMethod: string;
   earnings: { riderFee: number; uplift: number; currency: string };
 }

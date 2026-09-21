@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.2.0
+ * Version:           0.2.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,18 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.2.1 — three things the first live calls found:
+ *   - FATAL FIXED. The in-app copy called Pokbon_App_Push_Endpoint::send_to_user().
+ *     That method is on Pokbon_App_Push; the two classes live in the same file
+ *     and only one has it, so every in-app message was a fatal error.
+ *   - NO ROUTE RETURNS 5xx ANY MORE. EasyWP and Cloudflare replace a 5xx from
+ *     the origin with their own HTML page, so a carefully worded JSON error
+ *     reached the API as "HTTP 502: <!DOCTYPE html>" and the real reason was
+ *     lost. Everything this plugin knows about is now a 409 carrying JSON.
+ *   - SMS failures say WHY: switched off, no API key, or the gateway refused.
+ *     "false" tells nobody anything when a rider is standing at a door.
+ *   - NEW: what the rider is carrying, built from the order's own lines, plus
+ *     a collection note. Both show on the job board and in the rider app.
  * 0.2.0 — the backend-first layer, and one real bug found on the first install:
  *   - NESTED FORMS FIXED. The Test and Push buttons sat inside the Save form.
  *     HTML has no nested forms, so the browser merged them and PHP took the

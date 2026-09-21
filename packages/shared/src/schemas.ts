@@ -121,6 +121,8 @@ export const createJobSchema = z.object({
     ...latLng,
     address: z.string().max(300),
     zoneCode: z.string().max(40).optional(),
+    /** How to find the collection point. Shown to the rider, never routed on. */
+    note: z.string().max(500).optional(),
     ...contact.shape,
   }),
   dropoff: z.object({
@@ -133,6 +135,8 @@ export const createJobSchema = z.object({
   }),
   parcel: z.object({
     sizeClass: z.enum(['small', 'medium', 'large']).transform((s) => s.toUpperCase() as ParcelSize),
+    /** What it is, in the sender's words. A rider decides how to carry it. */
+    description: z.string().max(500).optional(),
     declaredValue: z.number().nonnegative().default(0),
     itemCount: z.number().int().positive().default(1),
   }),

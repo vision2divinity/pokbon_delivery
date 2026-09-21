@@ -141,6 +141,7 @@ class Pokbon_Delivery_Admin {
 					'default_pickup_address' => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_address'] ?? '' ) ),
 					'default_pickup_contact' => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_contact'] ?? '' ) ),
 					'default_pickup_phone'  => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_phone'] ?? '' ) ),
+					'default_pickup_note'   => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_note'] ?? '' ) ),
 				];
 
 				// The failed-trip uplift and the default markup are entered as

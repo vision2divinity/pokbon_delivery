@@ -15,7 +15,7 @@ export function toRiderJobView(job: Job, extras: { photos?: JobPhoto[] } = {}) {
     source: job.source,
     status: job.status,
     paymentMethod: job.paymentMethod,
-    parcel: { size: job.parcelSize, itemCount: job.itemCount },
+    parcel: { size: job.parcelSize, itemCount: job.itemCount, description: job.parcelDescription },
     pickup: {
       lat: job.pickupLat,
       lng: job.pickupLng,
@@ -23,6 +23,7 @@ export function toRiderJobView(job: Job, extras: { photos?: JobPhoto[] } = {}) {
       zoneCode: job.pickupZoneCode,
       contactName: job.pickupContactName,
       contactPhone: job.pickupContactPhone,
+      note: job.pickupNote,
     },
     dropoff: {
       lat: job.dropoffLat,
@@ -75,7 +76,7 @@ export function toRiderOfferView(offer: JobOffer & { job: Job }) {
     distanceMetres: offer.distanceMetres,
     pickup: { zoneCode: offer.job.pickupZoneCode, address: offer.job.pickupAddress, lat: offer.job.pickupLat, lng: offer.job.pickupLng },
     dropoff: { zoneCode: offer.job.dropoffZoneCode, address: offer.job.dropoffAddress, lat: offer.job.dropoffLat, lng: offer.job.dropoffLng },
-    parcel: { size: offer.job.parcelSize, itemCount: offer.job.itemCount },
+    parcel: { size: offer.job.parcelSize, itemCount: offer.job.itemCount, description: offer.job.parcelDescription },
     paymentMethod: offer.job.paymentMethod,
     earnings: {
       riderFee: fromMinor(offer.job.riderFeeMinor),

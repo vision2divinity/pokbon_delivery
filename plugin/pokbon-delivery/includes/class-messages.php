@@ -27,30 +27,58 @@ class Pokbon_Delivery_Messages {
 	/**
 	 * Send an SMS through the marketplace plugin's Zenoph integration.
 	 *
-	 * Returns true when the gateway accepted it. The API turns false into a
-	 * retry, and the rider's screen keeps offering "Send code again".
+	 * Returns '' on success, or a short reason. A boolean was not enough: when
+	 * a delivery code fails to reach a customer there is a rider standing at a
+	 * door, and "false" tells nobody whether the gateway is switched off, out
+	 * of credit, or simply unreachable.
 	 */
-	public static function sms( string $phone_e164, string $message, array $context = [] ): bool {
-		if ( ! class_exists( 'Pokbon_App_SMS' ) ) {
-			Pokbon_Delivery_Audit::log( 'delivery.sms_unavailable', [
-				'purpose' => $context['purpose'] ?? '',
-				'reason'  => 'marketplace plugin inactive',
-			] );
-			return false;
+	public static function sms_with_reason( string $phone_e164, string $message, array $context = [] ): string {
+		if ( ! class_exists( 'Pokbon_App_Sms' ) ) {
+			return 'The POKBON Mobile App plugin is not active, so there is no SMS gateway.';
 		}
 
 		$phone = self::normalise_ghana_phone( $phone_e164 );
 		if ( $phone === '' ) {
-			Pokbon_Delivery_Audit::log( 'delivery.sms_bad_number', [
-				'purpose' => $context['purpose'] ?? '',
-			] );
-			return false;
+			return 'That is not a usable Ghana mobile number.';
 		}
 
-		return Pokbon_App_SMS::send( $phone, $message, array_merge(
-			[ 'source' => 'pokbon-delivery' ],
+		// Checked here so the caller gets a reason it can act on, rather than
+		// discovering a switched-off gateway as a generic failure.
+		$creds   = get_option( 'pokbon_app_sms_credentials', [] );
+		$creds   = is_array( $creds ) ? $creds : [];
+		$api_key = (string) ( $creds['apiKey'] ?? '' );
+		if ( class_exists( 'Pokbon_App_Secret_Vault' ) ) {
+			$api_key = Pokbon_App_Secret_Vault::decrypt( $api_key );
+		}
+
+		if ( empty( $creds['enabled'] ) ) {
+			return 'SMS is switched off in POKBON App → Notifications. No delivery code can reach a customer until it is on.';
+		}
+		if ( trim( $api_key ) === '' ) {
+			return 'The Zenoph API key is not set in POKBON App → Notifications.';
+		}
+
+		$sent = Pokbon_App_Sms::send( $phone, $message, array_merge(
+			[ 'event' => 'delivery', 'source' => 'pokbon-delivery' ],
 			$context
 		) );
+
+		if ( ! $sent ) {
+			return 'The SMS gateway rejected the message. See the SMS log in POKBON App → Notifications.';
+		}
+		return '';
+	}
+
+	/** Convenience wrapper for callers that only need to know it worked. */
+	public static function sms( string $phone_e164, string $message, array $context = [] ): bool {
+		$reason = self::sms_with_reason( $phone_e164, $message, $context );
+		if ( $reason !== '' ) {
+			Pokbon_Delivery_Audit::log( 'delivery.sms_failed', [
+				'purpose' => $context['purpose'] ?? '',
+				'reason'  => $reason,
+			] );
+		}
+		return $reason === '';
 	}
 
 	/**
@@ -100,8 +128,11 @@ class Pokbon_Delivery_Messages {
 
 		$delivered = false;
 
-		if ( class_exists( 'Pokbon_App_Push_Endpoint' ) ) {
-			$delivered = (bool) Pokbon_App_Push_Endpoint::send_to_user(
+		// Pokbon_App_Push, NOT Pokbon_App_Push_Endpoint. They live in the same
+		// file and only one has send_to_user(); calling the other is a fatal,
+		// which is exactly what the first live call did.
+		if ( class_exists( 'Pokbon_App_Push' ) && method_exists( 'Pokbon_App_Push', 'send_to_user' ) ) {
+			$delivered = (bool) Pokbon_App_Push::send_to_user(
 				$user_id,
 				$title,
 				$body,
