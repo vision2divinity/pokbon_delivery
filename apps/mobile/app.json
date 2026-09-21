@@ -27,9 +27,9 @@
       ]
     ],
     "extra": {
-      "//": "Both addresses are overridable at runtime; see lib/api.ts. The plugin address is where the app asks what to be.",
+      "//": "Both addresses are overridable at runtime; see lib/api.ts. The plugin address is where the app asks what to be. The delivery address is the named tunnel rather than localhost, because a real phone on a real network cannot reach this laptop's loopback.",
       "pluginBaseUrl": "https://pokbongroup.com/wp-json/pokbon/v1",
-      "apiBaseUrl": "http://localhost:3001"
+      "apiBaseUrl": "https://delivery-dev.pokbongroup.com"
     }
   }
 }
