@@ -168,7 +168,27 @@ export class PluginClient {
     const text = await res.text();
     if (!res.ok) {
       this.logger.error(`Plugin ${method} ${path} → HTTP ${res.status}: ${text.slice(0, 300)}`);
-      throw new PluginCallError(res.status, `${method} ${path} failed with ${res.status}`);
+      /*
+       * Carry the plugin's own words, not just the number.
+       *
+       * This used to throw "failed with 409" and nothing else, so a payment
+       * prompt refused because a phone prefix was missing from the network
+       * table was recorded on the job as a bare status code. The plugin had
+       * said exactly what was wrong — "that number does not map to a known
+       * mobile-money network" — and the API dropped it on the floor. The
+       * status codes here are deliberately all 409, which makes the number
+       * carry no information at all on its own.
+       */
+      let reason = text.slice(0, 200);
+      try {
+        const body = JSON.parse(text) as { message?: unknown; code?: unknown };
+        if (typeof body.message === 'string' && body.message !== '') {
+          reason = typeof body.code === 'string' ? `${body.message} [${body.code}]` : body.message;
+        }
+      } catch {
+        // Not JSON — the snippet above is the best there is.
+      }
+      throw new PluginCallError(res.status, `${method} ${path} failed with ${res.status}: ${reason}`);
     }
     try {
       const json = JSON.parse(text) as { success?: boolean; data?: T } | T;

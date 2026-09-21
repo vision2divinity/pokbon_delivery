@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.6
+ * Version:           0.4.7
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,14 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.4.7 — 053 is MTN, and an SMS says GHS.
+ *   A pay-on-delivery prompt to an 053 number was refused as an unknown
+ *   mobile-money network, so the rider stood at the door waiting for a prompt
+ *   that was never going to arrive. MTN runs 024, 025, 053, 054, 055 and 059;
+ *   the table had every one except 053. Getting one of these wrong does not
+ *   fail loudly, it fails at somebody's gate.
+ *   The pay-by-link SMS now says GHS rather than GH₵: the cedi sign is not in
+ *   the GSM 7-bit alphabet, so a customer was asked to approve "GH?150.00".
  * 0.4.6 — the dispatch notice tells the truth about what happened.
  *   The delivery service is idempotent per order and vendor, so a second
  *   dispatch can hand back the job that already exists. The screen reported

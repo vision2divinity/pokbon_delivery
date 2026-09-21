@@ -183,15 +183,26 @@ class Pokbon_Delivery_Messages {
 	public static function momo_provider( string $e164 ): ?string {
 		$prefix = substr( str_replace( '+233', '', $e164 ), 0, 2 );
 
-		if ( in_array( $prefix, [ '24', '54', '55', '59', '25' ], true ) ) {
+		// MTN: 024, 025, 053, 054, 055, 059.
+		//
+		// 053 was missing until 2026-09-21 and it cost a delivery: the rider
+		// stood at the door, the prompt was refused as an unknown network, and
+		// nothing on the customer's side said why. Getting one of these wrong
+		// does not fail loudly, it fails at somebody's gate.
+		if ( in_array( $prefix, [ '24', '25', '53', '54', '55', '59' ], true ) ) {
 			return 'mtn';
 		}
+		// Telecel, formerly Vodafone. 'vod' is still the code Paystack takes.
 		if ( in_array( $prefix, [ '20', '50' ], true ) ) {
 			return 'vod';
 		}
+		// AirtelTigo.
 		if ( in_array( $prefix, [ '26', '27', '56', '57' ], true ) ) {
 			return 'atl';
 		}
+		// Deliberately null rather than a guess. 023 was Glo, which no longer
+		// runs mobile money here, and a prompt sent to a network the number is
+		// not on goes nowhere while a rider waits.
 		return null;
 	}
 }
