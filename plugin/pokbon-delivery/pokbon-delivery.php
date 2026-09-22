@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.3
+ * Version:           0.5.4
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,20 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.4 — the area selector never appeared, because the two region fields
+ *   spoke different languages.
+ *   A zone's region was free text, so it held "Greater Accra", while the
+ *   checkout passes WooCommerce's state code, "AA". Comparing them matched
+ *   nothing, every zone was filtered out, and checkout fell back to the flat
+ *   regional rate — reintroducing the exact bug 0.5.3 was built to remove,
+ *   one layer up and just as silently.
+ *   A zone now matches on either the code or the region's name, and the
+ *   Zones screen offers a list instead of a text box so this cannot drift
+ *   again. Anything already typed still works and is flagged.
+ *   The Zones table also shows what checkout would charge for each area, or
+ *   why it cannot. "The selector is not showing" was a mystery that needed
+ *   test orders to investigate; now the answer is on the screen where the
+ *   zone is configured.
  * 0.5.3 — checkout can now price by area, from the matrix.
  *   The other half of the fee fix. POKBON Checkout asks three questions
  *   through filters and this plugin answers them: which areas a buyer in a

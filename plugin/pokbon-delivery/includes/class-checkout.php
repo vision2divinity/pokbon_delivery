@@ -50,12 +50,7 @@ class Pokbon_Delivery_Checkout {
 
 		$out = [];
 		foreach ( Pokbon_Delivery_Settings::active_zones() as $zone ) {
-			$zone_region = strtoupper( trim( (string) ( $zone['region'] ?? '' ) ) );
-
-			// A zone with no region set is offered everywhere rather than
-			// nowhere. Hiding it would make a zone somebody carefully priced
-			// silently unreachable, which is the worse failure.
-			if ( $zone_region !== '' && $zone_region !== $region_code ) {
+			if ( ! self::region_matches( (string) ( $zone['region'] ?? '' ), $region_code ) ) {
 				continue;
 			}
 
@@ -79,6 +74,43 @@ class Pokbon_Delivery_Checkout {
 		);
 
 		return $out;
+	}
+
+	/**
+	 * Does a zone belong to the region the buyer picked?
+	 *
+	 * The two fields speak different languages. WooCommerce passes a state
+	 * code — AA, BE — while a zone's region was captured as free text,
+	 * so somebody typed "Greater Accra". Comparing them directly matched
+	 * nothing, every zone was filtered out, and the checkout silently fell
+	 * back to the flat regional rate: the exact bug this was built to fix,
+	 * reintroduced one layer up.
+	 *
+	 * So a zone matches on either the code or the region's name, and a zone
+	 * with no region set belongs everywhere — hiding a zone somebody carefully
+	 * priced is the worse failure of the two.
+	 */
+	private static function region_matches( string $zone_region, string $wc_code ): bool {
+		$zone_region = strtoupper( trim( $zone_region ) );
+		if ( $zone_region === '' ) {
+			return true;
+		}
+
+		$wc_code = strtoupper( trim( $wc_code ) );
+		if ( $zone_region === $wc_code ) {
+			return true;
+		}
+
+		return $zone_region === strtoupper( self::region_name( $wc_code ) );
+	}
+
+	/** The human name of a WooCommerce Ghana state code, or ''. */
+	public static function region_name( string $code ): string {
+		if ( ! function_exists( 'WC' ) || ! WC()->countries ) {
+			return '';
+		}
+		$states = WC()->countries->get_states( 'GH' );
+		return is_array( $states ) ? (string) ( $states[ strtoupper( $code ) ] ?? '' ) : '';
 	}
 
 	/**

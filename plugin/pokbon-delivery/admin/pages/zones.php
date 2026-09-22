@@ -34,12 +34,13 @@ $bands = Pokbon_Delivery_Settings::active_bands();
 				<th>Centre</th>
 				<th>Radius</th>
 				<th>Status</th>
+				<th>At checkout</th>
 				<th></th>
 			</tr>
 		</thead>
 		<tbody>
 		<?php if ( empty( $zones ) ) : ?>
-			<tr><td colspan="8">No zones yet. Add the first one below.</td></tr>
+			<tr><td colspan="9">No zones yet. Add the first one below.</td></tr>
 		<?php else : ?>
 			<?php foreach ( $zones as $zone ) : ?>
 				<tr>
@@ -54,6 +55,38 @@ $bands = Pokbon_Delivery_Settings::active_bands();
 							<span style="color:#1a7f37">Active</span>
 						<?php else : ?>
 							<span style="color:#8a8a8a">Off</span>
+						<?php endif; ?>
+					</td>
+					<td>
+						<?php
+						/*
+						 * Whether a buyer would actually be offered this area,
+						 * and at what price. Without it, "the selector is not
+						 * showing" is a mystery to be debugged by placing test
+						 * orders; with it the answer is on the screen where
+						 * the zone is configured.
+						 *
+						 * Priced from the default pickup, which is what a
+						 * single-warehouse order uses. A cart spanning vendors
+						 * in other places can cost more.
+						 */
+						$from  = (string) Pokbon_Delivery_Settings::get( 'default_pickup_zone' );
+						$quote = null;
+						if ( $from !== '' ) {
+							$quote = Pokbon_Delivery_Pricing::route(
+								[ 'zoneCode' => $from ],
+								[ 'zoneCode' => $zone['code'], 'lat' => $zone['lat'], 'lng' => $zone['lng'] ]
+							);
+						}
+						?>
+						<?php if ( $from === '' ) : ?>
+							<span style="color:#b32d2e">No default pickup set</span>
+						<?php elseif ( $quote === null ) : ?>
+							<span style="color:#b32d2e">Not priced</span>
+							<br><span class="description">from <?php echo esc_html( $from ); ?> — buyers get the regional rate</span>
+						<?php else : ?>
+							<strong><?php echo esc_html( Pokbon_Delivery_Settings::format( (int) $quote['buyerPriceMinor'] ) ); ?></strong>
+							<br><span class="description"><?php echo esc_html( Pokbon_Delivery_Pricing::rung_label( (string) $quote['rung'] ) ); ?></span>
 						<?php endif; ?>
 					</td>
 					<td>
@@ -88,8 +121,48 @@ $bands = Pokbon_Delivery_Settings::active_bands();
 		</tr>
 		<tr>
 			<th scope="row"><label for="pkbd-region">Region</label></th>
-			<td><input id="pkbd-region" name="region" type="text" class="regular-text"
-				value="<?php echo esc_attr( $edit['region'] ?? '' ); ?>"></td>
+			<td>
+				<?php
+				/*
+				 * A list, not a text box.
+				 *
+				 * This was free text, and checkout compares it against
+				 * WooCommerce's state code — AA, BE. "Greater Accra" typed
+				 * here matched nothing, so every zone was hidden at checkout
+				 * and buyers were quietly charged the flat regional rate
+				 * instead of the price set for their area. Saving the code
+				 * removes the class of mistake; the matching still accepts
+				 * the old text so nothing already saved breaks.
+				 */
+				$wc_regions = ( function_exists( 'WC' ) && WC()->countries ) ? WC()->countries->get_states( 'GH' ) : [];
+				$current    = (string) ( $edit['region'] ?? '' );
+				$known      = is_array( $wc_regions ) && ( isset( $wc_regions[ strtoupper( $current ) ] ) || $current === '' );
+				?>
+				<select id="pkbd-region" name="region">
+					<option value="" <?php selected( $current, '' ); ?>>— every region —</option>
+					<?php foreach ( (array) $wc_regions as $code => $label ) : ?>
+						<option value="<?php echo esc_attr( $code ); ?>" <?php selected( strtoupper( $current ), strtoupper( (string) $code ) ); ?>>
+							<?php echo esc_html( $label ); ?>
+						</option>
+					<?php endforeach; ?>
+					<?php if ( ! $known ) : ?>
+						<option value="<?php echo esc_attr( $current ); ?>" selected>
+							<?php echo esc_html( $current ); ?> (typed in)
+						</option>
+					<?php endif; ?>
+				</select>
+				<p class="description">
+					Which region a buyer must be in for this area to be offered at checkout.
+					<strong>Every region</strong> offers it everywhere, which is right for a zone that
+					serves more than one.
+					<?php if ( ! $known ) : ?>
+						<br><span style="color:#b32d2e">
+							&ldquo;<?php echo esc_html( $current ); ?>&rdquo; was typed in rather than chosen.
+							It still works, but pick it from the list to be sure.
+						</span>
+					<?php endif; ?>
+				</p>
+			</td>
 		</tr>
 		<tr>
 			<th scope="row"><label for="pkbd-band">Band</label></th>
