@@ -8,6 +8,8 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleProp,
@@ -36,9 +38,45 @@ export function Screen({
     </View>
   );
 
+  /*
+   * Two things a rider actually hits, both reported from a doorstep.
+   *
+   * The keyboard covered the very field it opened to fill — the delivery code
+   * sits low on the screen, so a rider was typing six digits blind while a
+   * customer read them out. Android resizes the window (adjustResize in the
+   * manifest), but with nothing below the last control there was nowhere to
+   * scroll to, so the input stayed hidden.
+   *
+   * And the final button sat flush against the gesture bar on phones that
+   * show one, which on this device put "Could not deliver" under the system
+   * navigation. The safe-area inset was already honoured; what was missing
+   * was any breathing room inside it.
+   *
+   * Hence the generous bottom padding rather than a clever measurement: it
+   * gives the scroll somewhere to go when the keyboard appears and keeps the
+   * last control clear of the bar when it has not.
+   */
+  const scrollable = (
+    <ScrollView
+      contentContainerStyle={{ flexGrow: 1, paddingBottom: space.xl * 2 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      // iOS insets the scroll view for the keyboard itself; Android does it
+      // by resizing the window, so this is deliberately one-sided.
+      automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+    >
+      {body}
+    </ScrollView>
+  );
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.background }} edges={['top', 'bottom']}>
-      {scroll ? <ScrollView contentContainerStyle={{ flexGrow: 1 }}>{body}</ScrollView> : body}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {scroll ? scrollable : body}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

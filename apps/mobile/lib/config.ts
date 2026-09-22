@@ -239,6 +239,10 @@ export const FALLBACK: AppConfig = {
       goOffline: 'Go off duty',
       onlineNote: 'You will be offered jobs near you while you are on duty.',
       offlineNote: 'You are off duty. No jobs will be offered.',
+      trackingTitle: 'POKBON Delivery - on duty',
+      trackingBody: 'Sharing your location so jobs near you can be offered. Go off duty to stop.',
+      foregroundOnly:
+        'Jobs can only reach you while this screen is open. Allow location all the time to be offered work with your phone in your pocket.',
     },
     offer: {
       title: 'New delivery',

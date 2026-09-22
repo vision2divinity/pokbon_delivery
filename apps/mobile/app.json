@@ -13,7 +13,10 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
@@ -22,7 +25,9 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "POKBON Delivery uses your location while you are on duty to offer you nearby jobs and to show the customer where their delivery is."
+          "locationAlwaysAndWhenInUsePermission": "POKBON Delivery reports where you are only while you are on duty, so jobs can be offered to the rider nearest the collection point and the customer can see their delivery approaching. It stops the moment you go off duty.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
     ],

@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, Field, H1, H2, Notice, P, Row, Tone } from '../components/ui';
 import { ApiError, jobs as jobsApi, rider as riderApi, RiderJob, RiderOffer } from '../lib/api';
 import { config, copy, feature, money } from '../lib/config';
+import { dutyLocationRunning, startDutyLocation, stopDutyLocation } from '../lib/duty-location';
 import { useSession } from '../lib/session';
 import { useTheme } from '../lib/theme';
 
@@ -40,6 +41,14 @@ export default function RiderHome() {
    * jacket without looking.
    */
   const announced = useRef<Set<string>>(new Set());
+
+  // Whether position is being reported in the background. False means the
+  // rider declined that permission and only gets offers while the app is open.
+  const [backgroundLocation, setBackgroundLocation] = useState(false);
+
+  useEffect(() => {
+    void dutyLocationRunning().then(setBackgroundLocation);
+  }, [rider?.onDuty]);
 
   const announce = useCallback((incoming: RiderOffer[]) => {
     const fresh = incoming.filter((o) => !announced.current.has(o.offerId));
@@ -81,21 +90,21 @@ export default function RiderHome() {
   }, [rider?.onDuty, load]);
 
   /*
-   * Keep saying where you are, not just where you were when you started.
+   * Keep saying where you are, even with the phone in a pocket.
    *
-   * Position used to be sent once, when the rider tapped "Go on duty", and
-   * never again. Jobs are offered to the nearest rider and the API will not
-   * offer to somebody whose last known position is hours old — quite rightly,
-   * since it has no idea whether they are still in Accra. So a rider who had
-   * been working all morning quietly stopped being offered anything, with
-   * nothing on their screen to explain it. Found when a job went straight to
-   * UNFULFILLED with a rider sitting on duty a kilometre away.
+   * This was a setInterval on this screen, which Android suspends the moment
+   * the app leaves the foreground. A rider on duty a kilometre from a pickup
+   * went 52 minutes without reporting, the API refused to offer them work for
+   * a stale position — correctly — and neither the rider nor the dispatcher
+   * was told why. Reporting now runs in a background task with a foreground
+   * service, started when they go on duty and stopped when they come off.
    *
-   * A minute is slow enough not to matter to a battery and fresh enough that a
-   * rider is never skipped for staleness.
+   * The effect here is kept for the case where background permission was
+   * declined: the app still reports while it is open, which is worse but not
+   * nothing, and the duty card says so.
    */
   useEffect(() => {
-    if (!rider?.onDuty) return;
+    if (!rider?.onDuty || backgroundLocation) return;
 
     const report = async () => {
       try {
@@ -112,21 +121,41 @@ export default function RiderHome() {
     void report();
     const t = setInterval(() => void report(), 60000);
     return () => clearInterval(t);
-  }, [rider?.onDuty]);
+  }, [rider?.onDuty, backgroundLocation]);
 
   const toggleDuty = async () => {
     setBusy(true);
     setError('');
     try {
       let at: { lat: number; lng: number } | undefined;
-      if (!rider?.onDuty) {
+      const goingOn = !rider?.onDuty;
+
+      if (goingOn) {
         const permission = await Location.requestForegroundPermissionsAsync();
         if (permission.status === 'granted') {
           const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         }
       }
-      await riderApi.setDuty(!rider?.onDuty, at);
+      await riderApi.setDuty(goingOn, at);
+
+      /*
+       * Start and stop the background reporting with duty itself.
+       *
+       * Stopping matters as much as starting: a contractor who has finished
+       * for the day is not followed home, and the notification saying they
+       * are being tracked disappears with the tracking.
+       */
+      if (goingOn) {
+        const running = await startDutyLocation({
+          title: copy('duty', 'trackingTitle'),
+          body: copy('duty', 'trackingBody'),
+        });
+        setBackgroundLocation(running);
+      } else {
+        await stopDutyLocation();
+        setBackgroundLocation(false);
+      }
       await refresh();
       await load();
     } catch (e) {
@@ -166,6 +195,17 @@ export default function RiderHome() {
       <Card key="duty">
         <H2>{rider?.onDuty ? copy('duty', 'goOffline') : copy('duty', 'goOnline')}</H2>
         <P muted>{rider?.onDuty ? copy('duty', 'onlineNote') : copy('duty', 'offlineNote')}</P>
+        {/*
+          Say it when cover is partial.
+
+          A rider who declined background location still gets offers, but only
+          while this screen is open — and the whole reason this work exists is
+          that silently receiving nothing is indistinguishable from a quiet
+          day. If they are half-covered, they are told.
+        */}
+        {rider?.onDuty && !backgroundLocation ? (
+          <Notice tone="warning">{copy('duty', 'foregroundOnly')}</Notice>
+        ) : null}
         <Button
           title={rider?.onDuty ? copy('duty', 'goOffline') : copy('duty', 'goOnline')}
           kind={rider?.onDuty ? 'secondary' : 'primary'}
