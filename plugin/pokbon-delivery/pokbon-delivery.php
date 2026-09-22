@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.4
+ * Version:           0.5.5
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,17 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.5 — a refused charge no longer strands the rider.
+ *   When Paystack would not create the mobile money charge at all, this
+ *   returned the error and stopped. The rider was left at a door with a
+ *   willing customer and nothing to offer: the only control on screen was
+ *   "send the prompt again", which failed again for the same reason.
+ *   Seen on 2026-09-22 — HTTP 400 "Charge attempted", from a number that had
+ *   charged fine the previous day on live keys.
+ *   A checkout link is a different call to a different endpoint and routinely
+ *   works where a direct debit will not: the customer can pay by card, by
+ *   another wallet, or by USSD on Paystack's own page. So the link is tried
+ *   before giving up, and only a failure of both is reported as a failure.
  * 0.5.4 — the area selector never appeared, because the two region fields
  *   spoke different languages.
  *   A zone's region was free text, so it held "Greater Accra", while the

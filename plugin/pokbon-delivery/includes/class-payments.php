@@ -157,7 +157,64 @@ class Pokbon_Delivery_Payments {
 				'stage'    => 'charge',
 				'error'    => $response->get_error_message(),
 			] );
-			return $response;
+
+			/*
+			 * A charge that cannot be created is not the end of the delivery.
+			 *
+			 * This used to return the error and stop, so a rider stood at a
+			 * door with a customer willing to pay and nothing to offer them —
+			 * the screen showed "send the prompt again" and the prompt would
+			 * fail again for the same reason. Seen on 2026-09-22 when Paystack
+			 * refused the charge outright with "Charge attempted".
+			 *
+			 * A checkout link is a different call to a different endpoint and
+			 * routinely works when a direct mobile-money charge will not: a
+			 * number Paystack will not debit directly can still pay on their
+			 * hosted page, by card, by another wallet, or by USSD. So the link
+			 * is tried before giving up, and only a failure of both is
+			 * reported as a failure.
+			 */
+			$link = self::create_payment_link( $intent_id );
+			if ( is_wp_error( $link ) || empty( $link['url'] ) ) {
+				return $response; // Both routes gone: the original error is the useful one.
+			}
+
+			$text = Pokbon_Delivery_Settings::message( 'pay_by_link', [
+				'amount' => number_format( $amount_minor / 100, 2 ),
+				'order'  => $order_id,
+				'link'   => $link['url'],
+			] );
+			if ( $text !== '' ) {
+				Pokbon_Delivery_Messages::sms( $phone, $text, [
+					'purpose'  => 'pay_by_link',
+					'order_id' => $order_id,
+				] );
+			}
+
+			$order->update_meta_data( self::META_INTENT, $intent_id );
+			$order->update_meta_data( self::META_JOB_ID, $job_id );
+			$order->update_meta_data( self::META_STATUS, 'pending' );
+			$order->update_meta_data( self::META_STAGE, 'link_only' );
+			$order->update_meta_data(
+				self::META_INSTRUCTION,
+				'The mobile money request was refused, so a payment link was sent instead.'
+			);
+			$order->update_meta_data( self::META_PROMPTS, $prompts + 1 );
+			$order->save();
+
+			$wait = (int) Pokbon_Delivery_Settings::get( 'payment_wait_minutes' );
+
+			return [
+				'intentId'    => $intent_id,
+				'status'      => 'pending',
+				'amount'      => round( $amount_minor / 100, 2 ),
+				'currency'    => self::currency(),
+				'expiresAt'   => gmdate( 'c', time() + max( 1, $wait ) * MINUTE_IN_SECONDS ),
+				'reference'   => $link['reference'],
+				'stage'       => 'link_only',
+				'instruction' => 'Mobile money was refused; the customer has a payment link by SMS.',
+				'payUrl'      => $link['url'],
+			];
 		}
 
 		/*

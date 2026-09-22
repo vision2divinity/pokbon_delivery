@@ -150,6 +150,15 @@ three larger items.
    rather than a longer staleness window, since the window is what stops jobs
    going to riders who are no longer where they say.
 
+10. **The rider app's keyboard covers the input it is there to fill.** Reported
+   2026-09-22 while entering the delivery code. The code and payment-link
+   fields sit low on the screen and Android's keyboard hides them, so a rider
+   types blind. Needs KeyboardAvoidingView or a keyboard-aware scroll around
+   those screens.
+11. **The app does not fit screens with on-screen navigation buttons.** Content
+   runs under the gesture/navigation bar on devices that show one. Needs the
+   safe-area insets honoured at the bottom, not just the top.
+
 ### Smaller, noted in passing
 
 - Notification channels: status updates should be in-app, with real SMS
@@ -185,7 +194,11 @@ three larger items.
   customers were redirected to a JSON 404. Our links now carry their own
   `callback_url`.
 - **Keys are currently Paystack TEST keys** (switched 2026-09-22) so tests do
-  not move real money.
+  not move real money. Note that a direct mobile-money charge to a real Ghana
+  number was refused outright in test mode with `HTTP 400: Charge attempted`,
+  having worked on live keys the day before. Test mode appears to want
+  Paystack's own test numbers. The plugin now falls back to a checkout link
+  when a charge cannot be created, so a delivery is still payable either way.
 
 ---
 
