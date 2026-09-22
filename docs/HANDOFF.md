@@ -140,6 +140,16 @@ three larger items.
    `cloudflared` still running as a process. `ops/tunnel-watchdog.sh` is a
    plaster. The API wants a VPS.
 
+9. **The rider app stops reporting position when it is not in the foreground.**
+   A JavaScript timer is suspended when Android backgrounds the app, so a
+   rider with the phone in a pocket goes stale after five minutes
+   (`location_stale_seconds`) and is silently skipped for every offer. Nothing
+   on their screen says so, and the dispatcher sees only "nobody eligible".
+   Observed 2026-09-22: 52 minutes stale with the rider on duty a kilometre
+   from the pickup. Needs background location (expo-location's task manager)
+   rather than a longer staleness window, since the window is what stops jobs
+   going to riders who are no longer where they say.
+
 ### Smaller, noted in passing
 
 - Notification channels: status updates should be in-app, with real SMS
