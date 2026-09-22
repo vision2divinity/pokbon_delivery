@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.1
+ * Version:           0.5.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,20 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.2 — a job now records what the buyer actually paid.
+ *   The buyer price on a job was taken from the zone matrix and labelled
+ *   "quoted at checkout". It was not: checkout charges a flat rate per region
+ *   while the matrix prices zone to zone. On #87619 the buyer paid GH¢30, the
+ *   job recorded GH¢50, and the board showed a GH¢10 margin on a delivery
+ *   that lost GH¢22. Recording revenue that never arrived is worse than
+ *   recording a loss, because a loss can be acted on.
+ *   The rider fee still comes from the matrix — that is what the route costs
+ *   to ride, whoever ordered it. The buyer price is now read off the order.
+ *   Freight and store pickup record zero: the shipping line on those orders
+ *   is air or sea freight, and counting it as delivery revenue would flatter
+ *   every one of them. The rider leg there is a cost POKBON absorbs.
+ *   What the matrix would have charged is kept beside it, so Reconciliation
+ *   shows the gap as a number rather than a suspicion.
  * 0.5.1 — a reconciliation screen, and the number it exists to show.
  *   Every other screen answers whether the software works. This one answers
  *   whether the business does. It puts what the customer was actually charged

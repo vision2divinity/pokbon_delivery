@@ -109,12 +109,20 @@ export class JobsService {
     let priceRung: string | null;
     let priceMatched: string | null;
     if (input.pricing) {
-      // The plugin already showed the buyer this price at checkout. It wins.
+      /*
+       * The plugin's numbers win, and they are two different things.
+       *
+       * buyerPrice is what the customer actually paid for delivery, read off
+       * the order. riderFee is what the route costs to ride, from the matrix.
+       * They are not the same number and should not pretend to be: this used
+       * to be labelled "quoted at checkout" for both, which was false for the
+       * fee and hid a real loss behind a fictional margin.
+       */
       riderFeeMinor = toMinor(input.pricing.riderFee);
       buyerPriceMinor = toMinor(input.pricing.buyerPrice);
       priceVersion = input.pricing.priceVersion ?? quote?.priceVersion ?? null;
       priceRung = 'plugin';
-      priceMatched = 'quoted at checkout';
+      priceMatched = 'charged at checkout; rider fee from the matrix';
     } else if (quote) {
       riderFeeMinor = quote.riderFeeMinor;
       buyerPriceMinor = quote.buyerPriceMinor;

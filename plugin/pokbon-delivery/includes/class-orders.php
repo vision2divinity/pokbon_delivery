@@ -22,6 +22,8 @@ class Pokbon_Delivery_Orders {
 	const META_GHANAPOST  = '_pokbon_delivery_ghanapost';
 	const META_NOTE       = '_pokbon_delivery_note';
 	const META_JOB_IDS    = '_pokbon_delivery_job_ids';
+	/** What the zone matrix would have charged, beside what checkout did. */
+	const META_MATRIX_PRICE = '_pokbon_delivery_matrix_price';
 	const META_STATUS     = '_pokbon_delivery_status';
 	const META_FEE        = '_pokbon_delivery_fee';
 	const META_SKIPPED    = '_pokbon_delivery_skipped_reason';
@@ -166,15 +168,47 @@ class Pokbon_Delivery_Orders {
 				'buyerUserId' => (string) $order->get_customer_id(),
 			];
 
-			// Price it here when both ends are in the matrix, so the job
-			// freezes the same numbers checkout showed the buyer.
+			/*
+			 * Two different numbers, and only one of them is revenue.
+			 *
+			 * The rider fee comes from the matrix: it is what this route costs
+			 * to ride, and it is the same whoever ordered and whatever they
+			 * were charged.
+			 *
+			 * The buyer price is what the customer actually paid for delivery,
+			 * read off the order. It used to be taken from the matrix too, and
+			 * labelled "quoted at checkout" — which was not true. Checkout
+			 * charges a flat rate per region; the matrix prices zone to zone.
+			 * On #87619 the buyer paid GH¢30, the job recorded GH¢50, and the
+			 * board showed a GH¢10 margin on a delivery that lost GH¢22.
+			 * Recording revenue that never arrived is worse than recording a
+			 * loss, because a loss can be acted on.
+			 *
+			 * Freight and store pickup pay nothing toward a rider leg: the
+			 * shipping line on those orders is air or sea freight, and
+			 * counting it as delivery revenue would flatter every one of them.
+			 * Those jobs carry zero, which is the truth — the rider leg was a
+			 * cost POKBON chose to absorb.
+			 */
 			$price = Pokbon_Delivery_Settings::price( $pickup['zoneCode'], $dropoff['zoneCode'] );
+			$kind  = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
+
+			$charged = $kind === 'local' ? (float) $order->get_shipping_total() : 0.0;
+
 			if ( $price !== null ) {
 				$payload['pricing'] = [
 					'riderFee'     => Pokbon_Delivery_Settings::from_minor( $price['riderFeeMinor'] ),
-					'buyerPrice'   => Pokbon_Delivery_Settings::from_minor( $price['buyerPriceMinor'] ),
+					'buyerPrice'   => $charged,
 					'priceVersion' => Pokbon_Delivery_Settings::sync_version(),
 				];
+
+				// What the matrix would have charged, kept beside what was
+				// actually charged so the gap is a number rather than a
+				// suspicion. The reconciliation screen reads this.
+				$order->update_meta_data(
+					self::META_MATRIX_PRICE,
+					Pokbon_Delivery_Settings::from_minor( $price['buyerPriceMinor'] )
+				);
 			}
 
 			$result = Pokbon_Delivery_API_Client::create_job( $payload );

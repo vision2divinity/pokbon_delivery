@@ -77,13 +77,27 @@ $result = Pokbon_Delivery_API_Client::jobs( [ 'from' => $from, 'to' => $to, 'lim
 		// What the customer actually paid for delivery. Only a POKBON order
 		// has one; a courier job is priced by the ladder and nothing else.
 		$charged = null;
+		$matrix  = null;
 		$vendor  = '';
 		if ( $is_pokbon && $order_id !== '' && function_exists( 'wc_get_order' ) ) {
 			$order = wc_get_order( (int) $order_id );
 			if ( $order ) {
 				$charged = (float) $order->get_shipping_total();
 				$vendor  = (string) $order->get_meta( '_wcfmmp_store_name' );
+
+				// What the zone matrix says this route is worth. Recorded at
+				// dispatch beside what checkout actually took, so the gap is a
+				// number rather than a suspicion. Older jobs do not have it.
+				$stored = $order->get_meta( Pokbon_Delivery_Orders::META_MATRIX_PRICE );
+				if ( $stored !== '' && $stored !== null ) {
+					$matrix = (float) $stored;
+				}
 			}
+		}
+		// Jobs created before the split recorded the matrix price as the buyer
+		// price, so that is the best available answer for them.
+		if ( $matrix === null ) {
+			$matrix = $quoted;
 		}
 
 		$status    = strtoupper( (string) ( $job['status'] ?? '' ) );
@@ -101,18 +115,18 @@ $result = Pokbon_Delivery_API_Client::jobs( [ 'from' => $from, 'to' => $to, 'lim
 		// afternoon look like a profitable one.
 		if ( $completed || $lost ) {
 			$totals['payout']  += $payout;
-			$totals['quoted']  += $quoted;
+			$totals['quoted']  += $matrix;
 			if ( $charged !== null ) {
 				$totals['charged'] += $charged;
 			}
 		}
 
-		$mismatch = $charged !== null && abs( $charged - $quoted ) >= 0.01;
+		$mismatch = $charged !== null && abs( $charged - $matrix ) >= 0.01;
 		if ( $mismatch && ( $completed || $lost ) ) {
 			$totals['mismatch']++;
 		}
 
-		$rows[] = compact( 'job', 'is_pokbon', 'order_id', 'vendor', 'rider_fee', 'uplift', 'commission', 'quoted', 'payout', 'charged', 'status', 'completed', 'lost', 'mismatch' );
+		$rows[] = compact( 'job', 'is_pokbon', 'order_id', 'vendor', 'rider_fee', 'uplift', 'commission', 'quoted', 'matrix', 'payout', 'charged', 'status', 'completed', 'lost', 'mismatch' );
 	}
 
 	$margin = $totals['charged'] - $totals['payout'];
@@ -121,14 +135,15 @@ $result = Pokbon_Delivery_API_Client::jobs( [ 'from' => $from, 'to' => $to, 'lim
 	<?php if ( $totals['mismatch'] > 0 ) : ?>
 		<div class="notice notice-error" style="margin-bottom:1em">
 			<p>
-				<strong><?php echo (int) $totals['mismatch']; ?> deliver<?php echo $totals['mismatch'] === 1 ? 'y was' : 'ies were'; ?>
-				charged a different amount at checkout than the job was priced at.</strong>
+				<strong>On <?php echo (int) $totals['mismatch']; ?> deliver<?php echo $totals['mismatch'] === 1 ? 'y' : 'ies'; ?>,
+				checkout charged something other than what your matrix prices that route at.</strong>
 			</p>
 			<p>
-				Checkout uses the website's own shipping rate; the job uses your zone matrix. When they
-				disagree, every margin below is wrong in the same direction, and the job board will
-				cheerfully show a profit on a delivery that lost money. Until they agree, trust the
-				<em>Charged</em> column and ignore <em>Quoted</em>.
+				Checkout charges a flat rate per region &mdash; Greater Accra, Ashanti &mdash; while your
+				matrix prices zone to zone, so a run to Madina and a run to Kasoa cost the buyer the same
+				and cost you very different amounts. The <em>Charged</em> column is now what the customer
+				actually paid, so the margins below are real. <em>Matrix says</em> is what you priced that
+				route at. Where they differ, the region rate is the one to change.
 			</p>
 		</div>
 	<?php endif; ?>
@@ -173,7 +188,7 @@ $result = Pokbon_Delivery_API_Client::jobs( [ 'from' => $from, 'to' => $to, 'lim
 				<th>Route</th>
 				<th>Status</th>
 				<th style="text-align:right">Charged</th>
-				<th style="text-align:right">Quoted</th>
+				<th style="text-align:right">Matrix says</th>
 				<th style="text-align:right">Rider paid</th>
 				<th style="text-align:right">Kept</th>
 			</tr>
@@ -210,7 +225,7 @@ $result = Pokbon_Delivery_API_Client::jobs( [ 'from' => $from, 'to' => $to, 'lim
 					<?php echo $r['charged'] === null ? '—' : esc_html( Pokbon_Delivery_Settings::format( (int) round( $r['charged'] * 100 ) ) ); ?>
 				</td>
 				<td style="text-align:right<?php echo $r['mismatch'] ? ';color:#b32d2e;font-weight:600' : ''; ?>">
-					<?php echo esc_html( Pokbon_Delivery_Settings::format( (int) round( $r['quoted'] * 100 ) ) ); ?>
+					<?php echo esc_html( Pokbon_Delivery_Settings::format( (int) round( $r['matrix'] * 100 ) ) ); ?>
 				</td>
 				<td style="text-align:right">
 					<?php echo esc_html( Pokbon_Delivery_Settings::format( (int) round( $r['payout'] * 100 ) ) ); ?>
