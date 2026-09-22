@@ -262,7 +262,86 @@ class Pokbon_Delivery_Orders {
 		}
 		$order->save();
 
-		return [ 'created' => $created, 'reused' => $reused, 'skipped' => $skipped ];
+		// Creating a job is not dispatching it. See offer_new_jobs().
+		$offers = self::offer_new_jobs( $created, $order );
+
+		return [ 'created' => $created, 'reused' => $reused, 'skipped' => $skipped, 'offers' => $offers ];
+	}
+
+	/**
+	 * Put each newly created job in front of a rider.
+	 *
+	 * Creating a job used to be the end of this function, and nothing anywhere
+	 * offered it. The API's sweep expires offers that already exist and
+	 * cascades from them; it never makes a FIRST offer. So an automatically
+	 * created job sat at CREATED until somebody happened to open the Jobs page
+	 * and press "Offer to the nearest rider" — while the button that made it
+	 * said "Send to riders now" and the order screen said it had been
+	 * dispatched.
+	 *
+	 * Observed 2026-09-22 on order #87684: job created at 20:53, still with
+	 * zero offers at 21:10. The rider toggled duty, signed out and signed back
+	 * in, and of course saw nothing, because there was nothing to see. Two
+	 * hours went into the rider's app and the rider's phone before anybody
+	 * looked at whether an offer had ever been made.
+	 *
+	 * Reused jobs are deliberately left alone: one already exists for this
+	 * order, and it may be assigned, collected or at somebody's door. Offering
+	 * it again would take it off the rider carrying it.
+	 *
+	 * Best effort, and loud when it fails. A job that nobody can be offered is
+	 * a real situation — every rider off duty at midnight is the ordinary
+	 * case — and the dispatcher needs to see that as a sentence on the order
+	 * rather than as a job that looks dispatched and never moves.
+	 */
+	private static function offer_new_jobs( array $created, $order ): array {
+		$out = [];
+		if ( $created === [] ) {
+			return $out;
+		}
+
+		$unoffered = [];
+		foreach ( $created as $job_id ) {
+			$job_id = (string) $job_id;
+			if ( $job_id === '' ) {
+				continue;
+			}
+
+			$result = Pokbon_Delivery_API_Client::offer_job( $job_id );
+
+			if ( is_wp_error( $result ) ) {
+				$out[ $job_id ] = 'error';
+				$unoffered[]    = sprintf( 'could not be offered (%s)', $result->get_error_message() );
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_JOB_CREATE_FAILED, [
+					'order_id' => (int) $order->get_id(),
+					'job_id'   => $job_id,
+					'reason'   => 'offer_failed',
+					'detail'   => $result->get_error_message(),
+				] );
+				continue;
+			}
+
+			if ( empty( $result['offered'] ) ) {
+				// Not an error: nobody was eligible. Usually every rider is off
+				// duty, out of range, or has not reported a position recently.
+				$out[ $job_id ] = 'nobody';
+				$unoffered[]    = 'no rider was available to take it';
+				continue;
+			}
+
+			$out[ $job_id ] = 'offered';
+		}
+
+		if ( $unoffered !== [] ) {
+			$order->add_order_note(
+				sprintf(
+					'[POKBON Delivery] Job created, but %s. Nothing will happen on its own — use "Offer to the nearest rider" on the job once a rider is on duty.',
+					implode( '; ', array_unique( $unoffered ) )
+				)
+			);
+		}
+
+		return $out;
 	}
 
 	/**
