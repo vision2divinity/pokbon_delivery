@@ -225,13 +225,25 @@ three larger items.
   and `woocommerce_thankyou` without setting its processed guard.
 - `apps/mobile/android/` is committed prebuild output. Harmless, could be
   gitignored.
-- **No local copy of `pokbon-checkout` carries our changes.** It is the plugin
-  that *calls* `pokbon_checkout_delivery_zones` / `_shipping_rate` /
-  `_order_created`, and the area selector demonstrably works on the live site,
-  so the code is deployed — but the only copies on this machine
-  (`~/OneDrive/Desktop/POKBON Marketplace/pokbon-checkout`, v1.0.0) predate it
-  and nothing in this repo has it. Pull the live copy down before touching web
-  checkout again, or the next edit silently reverts those three filters.
+- **`pokbon-checkout` lives at `C:\Users\POKBON Marketplace\pokbon-checkout`**
+  — a sibling of this repo, not inside it. v1.1.0, and it carries all three
+  filter call sites (`class-pokbon-shipping.php`, `templates/checkout-form.php`,
+  `class-pokbon-handler.php`). It is the plugin that *asks*; this one answers.
+
+  An earlier note here claimed no local copy existed and told you to pull the
+  live one down. That was wrong — the search behind it looked through OneDrive
+  and Downloads and never looked one directory up from this repo. The stale
+  v1.0.0 copy under `~/OneDrive/Desktop/POKBON Marketplace/` is a decoy.
+
+  **It is not under version control.** No `.git`, no history, no way to see what
+  changed or undo a bad edit. Several plugins beside it are in the same
+  position. Worth putting in a repo before the next change to any of them.
+
+  Useful confirmation from finding it: `class-pokbon-shipping.php:84` calls
+  `apply_filters( 'pokbon_checkout_delivery_zones', array(), $code )` with
+  **two** arguments, against a callback now registered for three. That is the
+  compatibility `check-checkout-zones.mjs` exists to hold, now verified against
+  the code that actually makes the call.
 
 ---
 
