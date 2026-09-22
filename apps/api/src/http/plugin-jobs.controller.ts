@@ -121,15 +121,41 @@ export class PluginJobsController {
   /** The live board. */
   @PluginAuth()
   @Get('jobs')
-  async list(@Query('status') status?: string, @Query('source') source?: string, @Query('limit') limit?: string) {
+  async list(
+    @Query('status') status?: string,
+    @Query('source') source?: string,
+    @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    /*
+     * from/to are for reconciliation, which is always "this week" or "last
+     * month" rather than "the last hundred". They bound createdAt because
+     * that is when the money was committed to — a job created on Friday and
+     * delivered on Monday belongs to Friday's ladder and Friday's commission
+     * rate, both of which are frozen on the job.
+     */
+    const since = from ? new Date(`${from}T00:00:00.000Z`) : null;
+    const until = to ? new Date(`${to}T23:59:59.999Z`) : null;
+    const range =
+      since || until
+        ? {
+            createdAt: {
+              ...(since && !Number.isNaN(since.valueOf()) ? { gte: since } : {}),
+              ...(until && !Number.isNaN(until.valueOf()) ? { lte: until } : {}),
+            },
+          }
+        : {};
+
     const jobs = await this.prisma.job.findMany({
       where: {
         ...(status ? { status: { in: status.split(',').map((s) => s.trim().toUpperCase()) } } : {}),
         ...(source ? { source: source.toUpperCase() } : {}),
+        ...range,
       },
       include: { rider: true },
       orderBy: { createdAt: 'desc' },
-      take: Math.min(Number(limit) || 100, 500),
+      take: Math.min(Number(limit) || 100, 1000),
     });
     return { jobs: jobs.map((j) => toAdminJobView(j)) };
   }

@@ -40,6 +40,7 @@ class Pokbon_Delivery_Admin {
 			self::SLUG . '-riders'  => [ 'Riders', 'render_riders' ],
 			self::SLUG . '-zones'   => [ 'Zones', 'render_zones' ],
 			self::SLUG . '-matrix'  => [ 'Price matrix', 'render_matrix' ],
+			self::SLUG . '-reconciliation' => [ 'Reconciliation', 'render_reconciliation' ],
 			self::SLUG . '-messages' => [ 'Messages', 'render_messages' ],
 			self::SLUG . '-brand'   => [ 'Brand & app', 'render_brand' ],
 			self::SLUG . '-settings' => [ 'Settings', 'render_settings' ],
@@ -822,6 +823,10 @@ class Pokbon_Delivery_Admin {
 
 	public static function render_matrix(): void {
 		require POKBON_DELIVERY_DIR . 'admin/pages/matrix.php';
+	}
+
+	public static function render_reconciliation(): void {
+		require POKBON_DELIVERY_DIR . 'admin/pages/reconciliation.php';
 	}
 
 	public static function render_messages(): void {

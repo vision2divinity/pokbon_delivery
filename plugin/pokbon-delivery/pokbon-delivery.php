@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.0
+ * Version:           0.5.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,21 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.1 — a reconciliation screen, and the number it exists to show.
+ *   Every other screen answers whether the software works. This one answers
+ *   whether the business does. It puts what the customer was actually charged
+ *   for delivery — which lives on the WooCommerce order and nowhere else —
+ *   beside what the job was priced at and what the rider was paid.
+ *   On 2026-09-21 a real delivery took GH¢30 at checkout, recorded GH¢50 of
+ *   delivery revenue on the job, and paid GH¢52 out. The job board showed a
+ *   GH¢10 margin; the truth was a GH¢22 loss. Rows where the two prices
+ *   disagree are flagged in red and counted at the top, because until they
+ *   agree every margin is wrong in the same direction.
+ *   Only settled jobs count toward the money. Failed and returned trips carry
+ *   a payout, because the rider still rode there.
+ *   It also says plainly what it cannot yet tell you: whether a rider has
+ *   actually been paid, what is owed to a sender on an outside job, and what
+ *   refunds did.
  * 0.5.0 — a finished delivery closes the order, and the wording is yours.
  *   - A delivered job recorded meta and an order note and then left the order
  *     in processing, so a customer who had just signed for their parcel went
