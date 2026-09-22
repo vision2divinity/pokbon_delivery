@@ -73,8 +73,23 @@ export async function startDutyLocation(copy: { title: string; body: string }): 
   const background = await Location.requestBackgroundPermissionsAsync();
   if (background.status !== 'granted') return false;
 
-  const already = await TaskManager.isTaskRegisteredAsync(DUTY_LOCATION_TASK);
-  if (already) return true;
+  /*
+   * Restart rather than skip when it is already running.
+   *
+   * A registered task survives the app being killed and relaunched, so
+   * "already registered" says nothing about which options it is running
+   * under. Returning early here meant a task started days ago kept its
+   * original configuration forever: after distanceInterval was corrected from
+   * 100 metres to 0, a phone on a desk still reported nothing, because the
+   * old task was still the one running and nothing in the app could replace
+   * it short of going off duty.
+   *
+   * Stopping first costs one missed fix and guarantees the rider is being
+   * tracked the way this version of the app intends.
+   */
+  if (await TaskManager.isTaskRegisteredAsync(DUTY_LOCATION_TASK)) {
+    await stopDutyLocation();
+  }
 
   await Location.startLocationUpdatesAsync(DUTY_LOCATION_TASK, {
     accuracy: Location.Accuracy.Balanced,

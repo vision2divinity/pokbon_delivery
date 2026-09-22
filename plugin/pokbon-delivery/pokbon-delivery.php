@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.5
+ * Version:           0.5.6
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,14 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.6 (2026-09-22) — the same price, asked without a browser:
+ *   Area pricing could only be worked out mid-session, because it read
+ *   WC()->cart, and the mobile app asks over REST where there is no session and
+ *   no cart. So every question here now takes an optional list of product ids
+ *   and only falls back to the cart when none is given, and two filters —
+ *   pokbon_delivery_zone_areas and pokbon_delivery_zone_price — let another
+ *   plugin ask them without knowing this one exists. Nothing about the website
+ *   path changes: a two-argument call still lands on the same defaults.
  * 0.5.5 — a refused charge no longer strands the rider.
  *   When Paystack would not create the mobile money charge at all, this
  *   returned the error and stopped. The rider was left at a door with a

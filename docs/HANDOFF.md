@@ -1,6 +1,6 @@
 # POKBON Delivery — state of play
 
-Last updated: 2026-09-22
+Last updated: 2026-09-22 (mobile app zone pricing)
 
 Read this first if you are picking the project up cold, or resuming after a
 break. It is the state of the work, not a design document — the design lives in
@@ -89,6 +89,8 @@ node scripts/check-price-ladder.mjs      # the three-rung ladder
 node scripts/check-price-parity.mjs      # PHP and TypeScript price identically
 node scripts/check-momo-prefixes.mjs     # both copies of the network table agree
 node scripts/check-sms-text.mjs          # both copies of the GSM folder agree
+node scripts/check-message-templates.mjs # both copies fill a template the same
+node scripts/check-checkout-zones.mjs    # the website and the app quote the same price
 ```
 
 Each of these exists because something it now catches reached production.
@@ -123,13 +125,28 @@ three larger items.
 
 ### The three larger ones
 
-6. **The delivery fee charged at checkout is not the fee the job is priced at.**
-   On #87619 the buyer paid **GH¢30** (the site's own regional shipping rate),
-   the job recorded **GH¢50** of delivery revenue (the zone matrix), and
-   **GH¢52** was paid out. POKBON lost GH¢22 on a delivery the board showed as
-   earning GH¢10. Nothing reconciles the three numbers. This is the only open
-   item that loses money silently, and it changes what the reconciliation
-   screen must show.
+6. ~~**The delivery fee charged at checkout is not the fee the job is priced
+   at.**~~ **Closed 2026-09-22, both platforms.** On #87619 the buyer paid
+   GH¢30 (the site's own regional rate), the job recorded GH¢50 (the zone
+   matrix) and GH¢52 was paid out — POKBON lost GH¢22 on a delivery the board
+   showed as earning GH¢10.
+
+   Fixed in two halves. The job records **what was actually charged**
+   (`class-orders.php` reads `get_shipping_total()`), and checkout **prices
+   from the matrix**: the buyer picks the area they are in and pays that route.
+   Proven on #87675 — Charged GH¢50 / Matrix GH¢50 / Rider GH¢40 / Kept GH¢10.
+
+   The app followed the same day (Mobile App 1.21.0, Delivery 0.5.6). It had
+   the worse version of the same bug: one flat Door Delivery fee for every
+   address in Ghana, and it never called `/delivery-regions` at all. Now
+   `/delivery-regions?product_ids=` returns priced areas per region,
+   `/cart/validate` quotes the chosen one, and the order proxy re-prices it
+   before saving — the client picks *where*, the server decides *how much*.
+   The chosen area rides on through the same `pokbon_checkout_order_created`
+   action the web checkout fires, so a phone order reaches dispatch with the
+   buyer's own area on it and nobody guesses a zone from an address.
+
+   **Untested on hardware.** Nothing has been ordered through the app yet.
 7. **No arrival guard.** On #87619 the rider went from assigned to "at your
    door" in **30 seconds**, which would have sent a real customer an SMS and a
    payment prompt while the rider was still at the shop. The arrival event now
@@ -140,7 +157,26 @@ three larger items.
    `cloudflared` still running as a process. `ops/tunnel-watchdog.sh` is a
    plaster. The API wants a VPS.
 
-9. **The rider app stops reporting position when it is not in the foreground.**
+9. **The rider app stops reporting position when the screen is off.** STILL
+   OPEN, and the most important one left. Built since the first report:
+   `apps/mobile/lib/duty-location.ts` — a TaskManager task with a foreground
+   service and a persistent notification, `timeInterval: 60_000`,
+   `distanceInterval: 0` (Android treats the two as **both** conditions, so
+   100m meant a stationary rider reported nothing), and stop-then-start on
+   every duty toggle so a task registered days ago cannot keep running old
+   options.
+
+   The notification shows and the service runs. **Fixes still stop the moment
+   the phone is locked** — sampled 2026-09-22 11:05-11:10: one fix at 11:05:18
+   and nothing for the following five minutes. Next things to rule out, in
+   order: battery optimisation for `com.pokbongroup.delivery` (Tecno, Infinix
+   and Samsung all throttle hard regardless of a foreground service); whether
+   `Accuracy.Balanced` is resolving to a network provider that Doze suspends,
+   where `Accuracy.High` would not; and whether Android is *batching* fixes and
+   delivering them on unlock, which would show as a burst of pings the instant
+   the screen comes on.
+
+   The original report:
    A JavaScript timer is suspended when Android backgrounds the app, so a
    rider with the phone in a pocket goes stale after five minutes
    (`location_stale_seconds`) and is silently skipped for every offer. Nothing
@@ -150,7 +186,10 @@ three larger items.
    rather than a longer staleness window, since the window is what stops jobs
    going to riders who are no longer where they say.
 
-10. **The rider app's keyboard covers the input it is there to fill.** Reported
+10. ~~**The rider app's keyboard covers the input it is there to fill.**~~
+   Done 2026-09-22: `Screen` in `apps/mobile/components/ui.tsx` is wrapped in a
+   KeyboardAvoidingView with `keyboardShouldPersistTaps="handled"` and bottom
+   padding for the navigation bar. Not yet confirmed on the device. Reported
    2026-09-22 while entering the delivery code. The code and payment-link
    fields sit low on the screen and Android's keyboard hides them, so a rider
    types blind. Needs KeyboardAvoidingView or a keyboard-aware scroll around
@@ -172,6 +211,13 @@ three larger items.
   and `woocommerce_thankyou` without setting its processed guard.
 - `apps/mobile/android/` is committed prebuild output. Harmless, could be
   gitignored.
+- **No local copy of `pokbon-checkout` carries our changes.** It is the plugin
+  that *calls* `pokbon_checkout_delivery_zones` / `_shipping_rate` /
+  `_order_created`, and the area selector demonstrably works on the live site,
+  so the code is deployed — but the only copies on this machine
+  (`~/OneDrive/Desktop/POKBON Marketplace/pokbon-checkout`, v1.0.0) predate it
+  and nothing in this repo has it. Pull the live copy down before touching web
+  checkout again, or the next edit silently reverts those three filters.
 
 ---
 

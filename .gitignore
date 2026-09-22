@@ -32,3 +32,4 @@ apps/mobile/.expo/
 **/.cxx/
 
 backups/
+plugin/*.zip

@@ -18,6 +18,13 @@
  * and two rider fees however close they are, which is the rule agreed on
  * 2026-09-21 — but a buyer sees one delivery line, because a basket broken
  * into several delivery charges reads as several orders going wrong.
+ *
+ * Asked two ways (2026-09-22). The website asks mid-session and the answer can
+ * read WC()->cart; the mobile app asks over REST, where there is no session and
+ * no cart at all. So every question here takes an optional list of product ids
+ * and only falls back to the cart when none is given. Without that the app
+ * could not be told a price before the order existed — and a price quoted after
+ * the order exists is not a price, it is a surprise.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -30,23 +37,41 @@ class Pokbon_Delivery_Checkout {
 	public static function bootstrap(): void {
 		// The checkout plugin asks; this answers. Registered whether or not
 		// that plugin is present, so installing it later needs no change here.
-		add_filter( 'pokbon_checkout_delivery_zones', [ self::class, 'zones_for_region' ], 10, 2 );
+		add_filter( 'pokbon_checkout_delivery_zones', [ self::class, 'zones_for_region' ], 10, 3 );
 		add_filter( 'pokbon_checkout_shipping_rate', [ self::class, 'rate_for_zone' ], 10, 4 );
 		add_action( 'pokbon_checkout_order_created', [ self::class, 'remember_zone' ], 10, 2 );
+
+		/*
+		 * The same two questions, asked by something that is not a browser.
+		 *
+		 * Filters rather than public methods on purpose: the mobile app plugin
+		 * must not have to know this class exists, or load in a particular
+		 * order, or handle it being deactivated. An unanswered filter returns
+		 * what it was given, which is exactly the fallback wanted.
+		 */
+		add_filter( 'pokbon_delivery_zone_areas', [ self::class, 'zones_for_region' ], 10, 3 );
+		add_filter( 'pokbon_delivery_zone_price', [ self::class, 'filter_zone_price' ], 10, 3 );
 	}
 
 	/**
 	 * The areas a buyer in this region can choose from.
 	 *
-	 * Empty means "this region has no zones yet", and the checkout falls back
-	 * to its own regional rate — which is why turning this on cannot strand a
+	 * Empty means "this region has no zones yet", and the caller falls back to
+	 * its own regional rate — which is why turning this on cannot strand a
 	 * customer in a region nobody has zoned.
+	 *
+	 * $product_ids describes the basket being priced. Null means "ask the
+	 * cart", which is what the website wants and what a REST caller cannot
+	 * have. Left untyped so a two-argument apply_filters() from POKBON
+	 * Checkout still lands on the default instead of fatalling.
 	 */
-	public static function zones_for_region( array $zones, string $region_code ): array {
+	public static function zones_for_region( array $zones, string $region_code, $product_ids = null ): array {
 		$region_code = strtoupper( trim( $region_code ) );
 		if ( $region_code === '' ) {
 			return [];
 		}
+
+		$pickups = self::pickup_zones_for( $product_ids );
 
 		$out = [];
 		foreach ( Pokbon_Delivery_Settings::active_zones() as $zone ) {
@@ -54,7 +79,7 @@ class Pokbon_Delivery_Checkout {
 				continue;
 			}
 
-			$price = self::price_for_zone( (string) $zone['code'] );
+			$price = self::quote( $zone, $pickups );
 			if ( $price === null ) {
 				continue; // Nothing prices this route yet; do not offer it.
 			}
@@ -130,22 +155,43 @@ class Pokbon_Delivery_Checkout {
 	}
 
 	/**
-	 * What this cart costs to deliver into one zone.
+	 * Filter form of price_for_zone(), for callers holding no reference here.
+	 *
+	 * Keeps $current when this cannot price the route, so an unpriced zone
+	 * leaves the caller's own number in place rather than zeroing it.
+	 */
+	public static function filter_zone_price( $current, $zone_code, $product_ids = null ) {
+		$price = self::price_for_zone( (string) $zone_code, $product_ids );
+		return $price === null ? $current : $price;
+	}
+
+	/**
+	 * What this basket costs to deliver into one zone.
 	 *
 	 * Null when nothing can price it, which the caller reads as "use the
 	 * regional rate". Deliberately not zero: a free delivery and an unpriced
 	 * one look identical to a buyer and completely different to the books.
 	 */
-	public static function price_for_zone( string $zone_code ): ?float {
+	public static function price_for_zone( string $zone_code, $product_ids = null ): ?float {
 		$zone = Pokbon_Delivery_Settings::zone( strtoupper( trim( $zone_code ) ) );
 		if ( ! $zone || empty( $zone['active'] ) ) {
 			return null;
 		}
 
-		$total   = 0.0;
-		$priced  = false;
+		return self::quote( $zone, self::pickup_zones_for( $product_ids ) );
+	}
 
-		foreach ( self::cart_pickup_zones() as $pickup_zone ) {
+	/**
+	 * Sum the legs from each collection point to one drop-off zone.
+	 *
+	 * Split out so a list of areas prices every one of them against pickup
+	 * zones resolved once, rather than re-reading the basket per row.
+	 */
+	private static function quote( array $zone, array $pickups ): ?float {
+		$total  = 0.0;
+		$priced = false;
+
+		foreach ( $pickups as $pickup_zone ) {
 			$leg = Pokbon_Delivery_Pricing::route(
 				[ 'zoneCode' => $pickup_zone ],
 				[ 'zoneCode' => $zone['code'], 'lat' => $zone['lat'], 'lng' => $zone['lng'] ]
@@ -164,23 +210,40 @@ class Pokbon_Delivery_Checkout {
 	}
 
 	/**
-	 * One pickup zone per distinct vendor in the cart.
+	 * One pickup zone per distinct vendor in the basket.
 	 *
-	 * The order-side code resolves this from order items; at checkout there is
-	 * no order yet, so the same question is asked of the cart. Vendors sharing
-	 * a pickup point are charged once, because that is one collection.
+	 * Null asks the cart, which is what a page render can do. A list of
+	 * product ids asks them directly, which is what a REST call has to do —
+	 * an app quoting from the default pickup point alone would be right for
+	 * the single-shop basket and quietly wrong for every multi-vendor one,
+	 * and "quietly wrong about money" is the failure this whole file exists
+	 * to stop.
+	 *
+	 * Vendors sharing a pickup point are charged once, because that is one
+	 * collection.
 	 */
-	private static function cart_pickup_zones(): array {
-		if ( ! function_exists( 'WC' ) || ! WC()->cart || WC()->cart->is_empty() ) {
-			return [];
+	private static function pickup_zones_for( $product_ids ): array {
+		$ids = null;
+
+		if ( is_array( $product_ids ) ) {
+			$ids = [];
+			foreach ( $product_ids as $id ) {
+				$id = (int) $id;
+				if ( $id > 0 ) {
+					$ids[] = $id;
+				}
+			}
+		}
+
+		if ( $ids === null ) {
+			$ids = self::cart_product_ids();
+			if ( $ids === null ) {
+				return []; // No cart and no list: nothing to price against.
+			}
 		}
 
 		$vendors = [];
-		foreach ( WC()->cart->get_cart() as $line ) {
-			$product_id = (int) ( $line['product_id'] ?? 0 );
-			if ( $product_id <= 0 ) {
-				continue;
-			}
+		foreach ( $ids as $product_id ) {
 			$vendor_id = (int) apply_filters(
 				'pokbon_delivery_product_vendor',
 				get_post_field( 'post_author', $product_id ),
@@ -206,6 +269,23 @@ class Pokbon_Delivery_Checkout {
 		return array_keys( $zones );
 	}
 
+	/** Product ids in the session cart, or null when there is no cart. */
+	private static function cart_product_ids(): ?array {
+		if ( ! function_exists( 'WC' ) || ! WC()->cart || WC()->cart->is_empty() ) {
+			return null;
+		}
+
+		$ids = [];
+		foreach ( WC()->cart->get_cart() as $line ) {
+			$product_id = (int) ( $line['product_id'] ?? 0 );
+			if ( $product_id > 0 ) {
+				$ids[] = $product_id;
+			}
+		}
+
+		return $ids;
+	}
+
 	/**
 	 * Keep the buyer's own choice on the order.
 	 *
@@ -214,6 +294,9 @@ class Pokbon_Delivery_Checkout {
 	 * dispatch screen pre-selects and asks them to check. When the buyer has
 	 * already said which area they are in, that guess is unnecessary and the
 	 * job can be priced and dispatched without anyone interpreting anything.
+	 *
+	 * The app fires this same action for the same reason, so an order placed
+	 * on a phone and an order placed in a browser arrive at dispatch alike.
 	 */
 	public static function remember_zone( $order_id, $zone_code ): void {
 		$zone_code = strtoupper( trim( (string) $zone_code ) );
