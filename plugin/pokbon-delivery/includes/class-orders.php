@@ -504,6 +504,20 @@ class Pokbon_Delivery_Orders {
 	 * Returns null rather than a guess. A job with the wrong pickup is worse
 	 * than a job that was never created, because a rider is dispatched on it.
 	 */
+	/**
+	 * Which zone a vendor is collected from, without needing an order.
+	 *
+	 * Checkout has to price before an order exists, so it asks the same
+	 * question the dispatch path asks — deliberately through the same
+	 * resolution, rather than a second copy that could drift. Returns '' when
+	 * the vendor cannot be placed, which the caller reads as "cannot price
+	 * this" rather than "free".
+	 */
+	public static function pickup_zone_for_vendor( $vendor_id ): string {
+		$pickup = self::pickup_for( $vendor_id, null );
+		return $pickup === null ? '' : (string) ( $pickup['zoneCode'] ?? '' );
+	}
+
 	private static function pickup_for( $vendor_id, $order ): ?array {
 		$vendor_id = (int) $vendor_id;
 
