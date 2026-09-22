@@ -78,11 +78,23 @@ export async function startDutyLocation(copy: { title: string; body: string }): 
 
   await Location.startLocationUpdatesAsync(DUTY_LOCATION_TASK, {
     accuracy: Location.Accuracy.Balanced,
-    // A minute, and 100 metres. The API treats a position older than five
-    // minutes as stale, so this leaves room for a missed fix in a building
-    // without draining a battery the rider pays to charge.
+    /*
+     * Time only. distanceInterval must stay zero.
+     *
+     * On Android the two are both conditions, so a distanceInterval of 100
+     * metres means "report when the rider has moved 100 metres" — and a rider
+     * waiting outside a shop has not moved at all. They would go stale,
+     * stop being offered work, and we would have rebuilt the very bug this
+     * task exists to fix. Observed on a phone sitting on a desk: the
+     * foreground service running, the notification showing, and not one fix
+     * delivered in four minutes.
+     *
+     * A minute is the interval because the API treats a position older than
+     * five as stale, which leaves room for several missed fixes indoors
+     * without draining a battery the rider pays to charge.
+     */
     timeInterval: 60_000,
-    distanceInterval: 100,
+    distanceInterval: 0,
     pausesUpdatesAutomatically: false,
     foregroundService: {
       notificationTitle: copy.title,

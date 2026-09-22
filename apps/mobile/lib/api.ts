@@ -129,9 +129,31 @@ async function refreshOnce(): Promise<boolean> {
         },
         15000,
       );
-      if (!res.ok) {
+      /*
+       * Only the server saying "no" ends a session.
+       *
+       * This used to throw the tokens away on any non-2xx, which includes a
+       * 502 from a restarting API, a 503, a 429, and the 530 Cloudflare
+       * returns when a tunnel drops. On 2026-09-22 exactly that happened: the
+       * tunnel blipped, the refresh came back 530, and a signed-in rider was
+       * silently logged out while the server's own refresh token remained
+       * valid and unrevoked. A rider would have needed a fresh SMS code,
+       * standing at a customer's door, because the connection had a bad
+       * minute.
+       *
+       * 401 and 403 are the server's considered answer that this credential
+       * is no longer good — a revoked session, a rotated token presented
+       * twice, a rider removed. Everything else is a failure to ask the
+       * question, and the tokens stay.
+       */
+      if (res.status === 401 || res.status === 403) {
         await clearTokens();
         sessionEnded?.();
+        return false;
+      }
+      if (!res.ok) {
+        // Kept, deliberately. The caller reports offline and the next attempt
+        // tries again with the credentials the rider still has.
         return false;
       }
       await saveTokens((await res.json()) as Tokens);
