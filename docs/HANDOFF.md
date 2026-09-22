@@ -146,7 +146,21 @@ three larger items.
    action the web checkout fires, so a phone order reaches dispatch with the
    buyer's own area on it and nobody guesses a zone from an address.
 
-   **Untested on hardware.** Nothing has been ordered through the app yet.
+   **The app half is committed but NOT BUILT.** A phone still shows the old flat
+   fee, because the change is JavaScript in a bundle the installed APK does not
+   have. EAS Update cannot carry it either — `checkAutomatically` is
+   `ON_ERROR_RECOVERY` and nothing calls `checkForUpdateAsync()`, so a published
+   update would sit there unfetched. It needs a binary.
+
+   Everything the release needs is written up in the app's own repo:
+   **`docs/DELIVERY_ZONE_PRICING_2026-09-22.md`** in `POKBON_Mobile_App` (app
+   commit `b78f1445` on `main`), pointed at from the top of that repo's
+   `HANDOFF.md`. Deployment is handled in a separate session; do not duplicate
+   that doc here, update it there.
+
+   Nothing is half-broken meanwhile. An old app never sends `delivery_zone`, so
+   the live plugin prices it exactly as it did before — the two halves can stay
+   out of step indefinitely.
 7. **No arrival guard.** On #87619 the rider went from assigned to "at your
    door" in **30 seconds**, which would have sent a real customer an SMS and a
    payment prompt while the rider was still at the shop. The arrival event now
