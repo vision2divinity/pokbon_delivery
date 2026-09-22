@@ -20,6 +20,7 @@ import {
   JobStatus,
   OfferStatus,
   PaymentMethod,
+  renderMessage,
   RiderSource,
   RiderStatus,
 } from '@pokbon-delivery/shared';
@@ -376,7 +377,17 @@ export class JobsService {
            */
           ? ` GHS ${fromMinor(job.amountDueMinor).toFixed(2)} to pay on MoMo, no cash - we will text you how to approve it.`
           : '';
-      const message = `POKBON: your rider is at your door. Your delivery code is ${code}. Read it to the rider only.${amountLine}`;
+      const message = renderMessage(
+        this.settings.get('messages'),
+        'delivery_code',
+        'POKBON: your rider is at your door. Your delivery code is {code}. Read it to the rider only.{amount}',
+        { code, amount: amountLine },
+      );
+      if (message === '') {
+        // Nothing else confirms a delivery, so this is refused rather than
+        // leaving a rider at a door with no way to finish.
+        throw new ConflictException('Delivery code messages are switched off in POKBON Delivery → Messages.');
+      }
 
       await this.outbox.enqueue('sms.send', { to: job.dropoffContactPhone, message, jobId, purpose: 'delivery_code' }, tx);
       if (job.source === JobSource.MARKETPLACE && job.buyerUserId) {
@@ -737,11 +748,21 @@ export class JobsService {
         // survives the GSM 7-bit alphabet.
         ? ` Have GHS ${fromMinor(job.amountDueMinor).toFixed(2)} ready on MoMo - you will approve a prompt at the door, no cash.`
         : '';
+    const message = renderMessage(
+      this.settings.get('messages'),
+      'assigned',
+      'POKBON: {rider} is on the way with your delivery.{amount}',
+      { rider: rider?.fullName ?? 'your rider', amount: amountLine },
+    );
+    // Unlike the codes, this one is a courtesy. Switched off, the delivery
+    // still works, so it is skipped quietly rather than refused.
+    if (message === '') return;
+
     await this.outbox.enqueue(
       'sms.send',
       {
         to: job.dropoffContactPhone,
-        message: `POKBON: ${rider?.fullName ?? 'your rider'} is on the way with your delivery.${amountLine}`,
+        message,
         jobId: job.id,
         purpose: 'assigned',
       },

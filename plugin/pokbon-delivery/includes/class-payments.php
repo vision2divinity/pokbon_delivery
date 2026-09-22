@@ -227,7 +227,14 @@ class Pokbon_Delivery_Payments {
 		}
 
 		// One message, carrying whatever the customer actually has to do.
-		$lines = [ sprintf( 'POKBON: approve GHS %s for order #%d.', number_format( $amount_minor / 100, 2 ), $order_id ) ];
+		// The opening line is editable under POKBON Delivery -> Messages; the
+		// rest is Paystack's own wording and the link, which are not ours to
+		// rewrite.
+		$opening = Pokbon_Delivery_Settings::message( 'payment_prompt', [
+			'amount' => number_format( $amount_minor / 100, 2 ),
+			'order'  => $order_id,
+		] );
+		$lines = $opening === '' ? [] : [ $opening ];
 		if ( $instruction !== '' ) {
 			$lines[] = $instruction;
 		} elseif ( $pay_url === '' ) {
@@ -236,6 +243,22 @@ class Pokbon_Delivery_Payments {
 		if ( $pay_url !== '' ) {
 			$lines[] = 'Or pay here: ' . $pay_url;
 		}
+		if ( $lines === [] ) {
+			// Switched off entirely. The prompt still went to the handset;
+			// this only suppresses our own covering message.
+			return [
+				'intentId'    => $intent_id,
+				'status'      => 'pending',
+				'amount'      => round( $amount_minor / 100, 2 ),
+				'currency'    => self::currency(),
+				'expiresAt'   => gmdate( 'c', time() + max( 1, $wait ) * MINUTE_IN_SECONDS ),
+				'reference'   => $reference,
+				'stage'       => $stage,
+				'instruction' => $instruction,
+				'payUrl'      => $pay_url,
+			];
+		}
+
 		Pokbon_Delivery_Messages::sms( $phone, implode( ' ', $lines ), [
 			'purpose'  => 'payment_prompt',
 			'order_id' => $order_id,
@@ -396,16 +419,18 @@ class Pokbon_Delivery_Payments {
 			return $link;
 		}
 
+		$text = Pokbon_Delivery_Settings::message( 'pay_by_link', [
+			'amount' => number_format( (float) $link['amount'], 2 ),
+			'order'  => $link['orderId'],
+			'link'   => $link['url'],
+		] );
+		if ( $text === '' ) {
+			return new WP_Error( 'message_off', 'The pay-by-link message is switched off under POKBON Delivery -> Messages.' );
+		}
+
 		$sent = Pokbon_Delivery_Messages::sms(
 			$to,
-			sprintf(
-				// GHS, not GH₵. The cedi sign is not in the GSM 7-bit alphabet
-				// and arrives as a question mark on the customer's phone.
-				'POKBON: pay GHS %s for order #%d here: %s',
-				number_format( (float) $link['amount'], 2 ),
-				$link['orderId'],
-				$link['url']
-			),
+			$text,
 			[ 'purpose' => 'pay_by_link', 'order_id' => $link['orderId'] ]
 		);
 

@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.4.9
+ * Version:           0.5.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,22 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.0 — a finished delivery closes the order, and the wording is yours.
+ *   - A delivered job recorded meta and an order note and then left the order
+ *     in processing, so a customer who had just signed for their parcel went
+ *     on seeing it as ongoing in the app. The order now moves, to a status you
+ *     choose under Settings — "choose for me" uses your Delivered status if
+ *     you have one. Only POKBON orders; a courier job has no order behind it.
+ *     Failed and returned deliveries are left alone by default, because a
+ *     failed delivery is not a cancelled order and the money is a decision.
+ *   - New Messages screen. Every message this service sends a person now
+ *     lives there with its variables and an on/off switch, including the
+ *     rider's sign-in code, which was hardcoded inside the delivery service
+ *     where nobody running the business could reach it. Changing a word no
+ *     longer needs a release of anything.
+ *     Guards: a message that must carry {code} or {link} keeps its previous
+ *     wording if you remove them, and an emptied box falls back to the
+ *     shipped text rather than sending nothing.
  * 0.4.9 — a customer who pays should not be shown a JSON error.
  *   Paystack's dashboard had the Callback URL set to the webhook address, a
  *   POST-only route, so the browser redirect after a successful payment

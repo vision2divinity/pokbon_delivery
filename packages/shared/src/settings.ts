@@ -29,6 +29,8 @@ export const SettingKey = {
 
   /** Rider commission schedule: [{ effectiveFrom: 'YYYY-MM-DD', rateBps?: number, flatMinor?: number }]. Empty = zero. */
   RIDER_COMMISSION_SCHEDULE: 'rider_commission_schedule',
+  /** Every message sent to a person, as editable text. Owned by the plugin. */
+  MESSAGES: 'messages',
   /** Failed-trip uplift credited to the rider's next delivery. { rateBps?: number, flatMinor?: number } */
   FAILED_TRIP_UPLIFT: 'failed_trip_uplift',
   /** Default markup used to fill a buyer price from a rider fee. { rateBps?: number, flatMinor?: number } */
@@ -93,6 +95,33 @@ export interface SettingsShape {
   [SettingKey.STANDALONE_REFUND_ON_FAILURE]: { refundBps: number };
   [SettingKey.AGREEMENT_VERSION]: string;
   [SettingKey.ACTIVE_VEHICLE_CLASSES]: string[];
+  [SettingKey.MESSAGES]: Record<string, { enabled?: boolean; text?: string }>;
+}
+
+/**
+ * Fill a message template.
+ *
+ * Mirrors Pokbon_Delivery_Settings::message(). A placeholder the caller did
+ * not supply is removed rather than left in: "{rider} is on the way" reaching
+ * a customer is worse than a sentence reading slightly short.
+ */
+export function renderMessage(
+  messages: Record<string, { enabled?: boolean; text?: string }>,
+  key: string,
+  fallback: string,
+  vars: Record<string, string | number> = {},
+): string {
+  const entry = messages?.[key];
+  if (entry && entry.enabled === false) return '';
+
+  let text = (entry?.text ?? '').trim() === '' ? fallback : (entry?.text as string);
+  for (const [name, value] of Object.entries(vars)) {
+    text = text.split(`{${name}}`).join(String(value));
+  }
+  return text
+    .replace(/\{[a-z_]+\}/g, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
 }
 
 /** Launch values from PRD § 12b. Overridden by whatever the plugin has synced. */
@@ -119,6 +148,10 @@ export const SETTING_DEFAULTS: SettingsShape = {
   payout_cycle: 'weekly',
   standalone_refund_on_failure: { refundBps: 10000 },
   agreement_version: '2026-09-20',
+  // Empty: the plugin owns the wording and syncs it. The API falls back to
+  // the literal it would otherwise have hardcoded, so a service started
+  // before its first sync still sends something sensible.
+  messages: {},
   active_vehicle_classes: ['MOTORBIKE'],
 };
 

@@ -22,6 +22,75 @@ import * as SecureStore from 'expo-secure-store';
 
 const CACHE_KEY = 'pkbd_app_config';
 
+/*
+ * The config cache does not belong in the device keystore.
+ *
+ * It used to live in SecureStore, which warned on every launch that the value
+ * was over 2048 bytes and "may not be stored successfully" — and a future Expo
+ * SDK turns that into a throw, at which point the app fails to start rather
+ * than falling back. The keystore is for secrets, sized for secrets; nothing
+ * in this config is one. It is the theme, the wording and the feature
+ * switches, all of which the plugin serves publicly.
+ *
+ * A file is the right home, but expo-file-system is present in the workspace
+ * without being declared by this app, so whether it is linked into a given
+ * build cannot be assumed. Hence the ladder below: a file when it is there,
+ * the keystore when the value is genuinely small, and otherwise no cache at
+ * all — which costs an offline launch its live theme and nothing else, since
+ * FALLBACK is complete.
+ */
+const KEYSTORE_SAFE_BYTES = 2000;
+
+type Cache = {
+  read: () => Promise<string | null>;
+  write: (value: string) => Promise<void>;
+  kind: 'file' | 'keystore' | 'none';
+};
+
+let cacheImpl: Cache | null = null;
+
+function fileCache(): Cache | null {
+  try {
+    // Required lazily: importing a module that is not linked throws at load,
+    // which would take the whole app down instead of one cache.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('expo-file-system') as {
+      documentDirectory?: string | null;
+      readAsStringAsync?: (uri: string) => Promise<string>;
+      writeAsStringAsync?: (uri: string, contents: string) => Promise<void>;
+    };
+    if (!fs?.documentDirectory || !fs.readAsStringAsync || !fs.writeAsStringAsync) return null;
+
+    const path = `${fs.documentDirectory}${CACHE_KEY}.json`;
+    return {
+      kind: 'file',
+      read: () => fs.readAsStringAsync!(path).catch(() => null),
+      write: (value) => fs.writeAsStringAsync!(path, value).catch(() => undefined) as Promise<void>,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function keystoreCache(): Cache {
+  return {
+    kind: 'keystore',
+    read: () => SecureStore.getItemAsync(CACHE_KEY).catch(() => null),
+    write: async (value) => {
+      // Refusing the write is the point: the warning exists because the
+      // keystore is not sized for this, and a silent half-write is worse
+      // than no cache.
+      if (value.length > KEYSTORE_SAFE_BYTES) return;
+      await SecureStore.setItemAsync(CACHE_KEY, value).catch(() => undefined);
+    },
+  };
+}
+
+function cache(): Cache {
+  if (!cacheImpl) cacheImpl = fileCache() ?? keystoreCache();
+  return cacheImpl;
+}
+
 /** Where the plugin lives. The API is a different address; see lib/api.ts. */
 const PLUGIN_BASE =
   (Constants.expoConfig?.extra?.pluginBaseUrl as string | undefined) ??
@@ -304,7 +373,7 @@ export async function loadConfig(): Promise<ConfigSource> {
         current = merge(FALLBACK, live);
         source = 'live';
         // Best effort: a cache write failing must not fail the launch.
-        void SecureStore.setItemAsync(CACHE_KEY, JSON.stringify(live)).catch(() => undefined);
+        void cache().write(JSON.stringify(live));
         return source;
       }
     }
@@ -313,7 +382,7 @@ export async function loadConfig(): Promise<ConfigSource> {
   }
 
   try {
-    const cached = await SecureStore.getItemAsync(CACHE_KEY);
+    const cached = await cache().read();
     if (cached) {
       current = merge(FALLBACK, JSON.parse(cached) as AppConfig);
       source = 'cached';

@@ -70,6 +70,60 @@ class Pokbon_Delivery_Settings {
 			// are set. Phase 0 is manual dispatch (PRD § 15), and switching
 			// this on early would create jobs nobody can price.
 			'auto_create_jobs'        => false,
+			/*
+			 * What a completed delivery does to the WooCommerce order.
+			 *
+			 * Until 2026-09-22 a delivered job recorded meta and an order note
+			 * and left the order alone, so a customer who had just signed for
+			 * their parcel still saw it "ongoing" in the app. The order is
+			 * what the marketplace shows; leaving it untouched means the
+			 * delivery service knows the job is done and the only person who
+			 * cares does not.
+			 *
+			 * Empty means "leave the order alone", which is the right answer
+			 * for a site that drives its own statuses elsewhere. 'auto' picks
+			 * a registered `delivered` status if the site has one and falls
+			 * back to `completed`.
+			 */
+			/*
+			 * Every message this system sends a person, as editable text.
+			 *
+			 * These were hardcoded until 2026-09-22 — the rider's sign-in text
+			 * inside the delivery service, the rest scattered through the PHP.
+			 * Changing a word meant a release, which is exactly what the
+			 * backend-first rule exists to avoid. The delivery service reads
+			 * these through the settings sync and composes from them.
+			 *
+			 * Keep them plain. Messages are folded to the GSM alphabet before
+			 * sending, so a curly quote or a cedi sign will be replaced.
+			 */
+			'messages' => [
+				'rider_otp' => [
+					'enabled' => true,
+					'text'    => 'Your POKBON Delivery code is {code}. It expires in {minutes} minutes. Never share it.',
+				],
+				'delivery_code' => [
+					'enabled' => true,
+					'text'    => 'POKBON: your rider is at your door. Your delivery code is {code}. Read it to the rider only.{amount}',
+				],
+				'assigned' => [
+					'enabled' => true,
+					'text'    => 'POKBON: {rider} is on the way with your delivery.{amount}',
+				],
+				'payment_prompt' => [
+					'enabled' => true,
+					'text'    => 'POKBON: approve GHS {amount} for order #{order}.',
+				],
+				'pay_by_link' => [
+					'enabled' => true,
+					'text'    => 'POKBON: pay GHS {amount} for order #{order} here: {link}',
+				],
+			],
+			'order_status_on_delivered' => 'auto',
+			// Deliberately empty by default: a failed delivery is not a
+			// cancelled order, and what should happen to the money is a
+			// decision for a human, not a default.
+			'order_status_on_failed'    => '',
 			// Where a rider collects when the vendor has no coordinates of
 			// its own. Correct for a single-warehouse start; wire the
 			// `pokbon_delivery_vendor_pickup` filter for real vendor stores.
@@ -203,6 +257,39 @@ class Pokbon_Delivery_Settings {
 	public static function prices(): array {
 		$prices = get_option( self::OPT_PRICES, [] );
 		return is_array( $prices ) ? $prices : [];
+	}
+
+	/**
+	 * One message's text, or '' when it is switched off.
+	 *
+	 * Falls back to the shipped default when a key is missing, so adding a
+	 * message in a release does not require the admin to save the page before
+	 * anything is sent.
+	 */
+	public static function message( string $key, array $vars = [] ): string {
+		$all     = self::get( 'messages' );
+		$all     = is_array( $all ) ? $all : [];
+		$message = isset( $all[ $key ] ) && is_array( $all[ $key ] ) ? $all[ $key ] : null;
+
+		if ( $message !== null && empty( $message['enabled'] ) ) {
+			return '';
+		}
+
+		$text = (string) ( $message['text'] ?? '' );
+		if ( trim( $text ) === '' ) {
+			$defaults = self::defaults();
+			$text     = (string) ( $defaults['messages'][ $key ]['text'] ?? '' );
+		}
+
+		foreach ( $vars as $name => $value ) {
+			$text = str_replace( '{' . $name . '}', (string) $value, $text );
+		}
+
+		// Any placeholder the caller did not supply is dropped rather than
+		// shown: "{rider} is on the way" reaching a customer is worse than
+		// the sentence reading a little short.
+		$text = preg_replace( '/\{[a-z_]+\}/', '', $text );
+		return trim( preg_replace( '/ {2,}/', ' ', $text ) );
 	}
 
 	public static function price( string $from, string $to ): ?array {

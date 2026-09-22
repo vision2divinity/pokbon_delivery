@@ -40,6 +40,7 @@ class Pokbon_Delivery_Admin {
 			self::SLUG . '-riders'  => [ 'Riders', 'render_riders' ],
 			self::SLUG . '-zones'   => [ 'Zones', 'render_zones' ],
 			self::SLUG . '-matrix'  => [ 'Price matrix', 'render_matrix' ],
+			self::SLUG . '-messages' => [ 'Messages', 'render_messages' ],
 			self::SLUG . '-brand'   => [ 'Brand & app', 'render_brand' ],
 			self::SLUG . '-settings' => [ 'Settings', 'render_settings' ],
 		];
@@ -136,6 +137,10 @@ class Pokbon_Delivery_Admin {
 					'payout_cycle'          => in_array( ( $_POST['payout_cycle'] ?? '' ), [ 'daily', 'weekly', 'fortnightly' ], true )
 						? sanitize_key( wp_unslash( $_POST['payout_cycle'] ) ) : 'weekly',
 					'auto_create_jobs'      => ! empty( $_POST['auto_create_jobs'] ),
+					// 'auto' and '' are both meaningful here, so this is not
+					// run through a "pick one of the known statuses" guard.
+					'order_status_on_delivered' => sanitize_key( (string) wp_unslash( $_POST['order_status_on_delivered'] ?? 'auto' ) ),
+					'order_status_on_failed'    => sanitize_key( (string) wp_unslash( $_POST['order_status_on_failed'] ?? '' ) ),
 					'rename_cod_label'      => ! empty( $_POST['rename_cod_label'] ),
 					'default_pickup_zone'   => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_zone'] ?? '' ) ),
 					'default_pickup_address' => sanitize_text_field( (string) wp_unslash( $_POST['default_pickup_address'] ?? '' ) ),
@@ -253,6 +258,54 @@ class Pokbon_Delivery_Admin {
 					'cleared' => $cleared,
 				] );
 				$notice = sprintf( '%d route(s) priced, %d cleared.', $saved, $cleared ) . $notice;
+				break;
+
+			case 'save_messages':
+				$texts = (array) ( $_POST['message_text'] ?? [] );
+				$on    = (array) ( $_POST['message_on'] ?? [] );
+
+				$defaults = Pokbon_Delivery_Settings::defaults()['messages'];
+				$saved    = [];
+				$warnings = [];
+
+				foreach ( $defaults as $key => $default ) {
+					$text = isset( $texts[ $key ] )
+						? sanitize_textarea_field( (string) wp_unslash( $texts[ $key ] ) )
+						: (string) $default['text'];
+					$text = trim( $text );
+
+					// An empty box means "use the shipped wording", not "send
+					// an empty message". Somebody clearing a field to start
+					// again should not silently disable it.
+					if ( $text === '' ) {
+						$text = (string) $default['text'];
+					}
+
+					// The link is the entire point of that message.
+					if ( $key === 'pay_by_link' && strpos( $text, '{link}' ) === false ) {
+						$warnings[] = 'The payment link message must contain {link}; the previous wording was kept.';
+						$existing   = Pokbon_Delivery_Settings::get( 'messages' );
+						$text       = (string) ( $existing[ $key ]['text'] ?? $default['text'] );
+					}
+					// Likewise the codes.
+					if ( in_array( $key, [ 'rider_otp', 'delivery_code' ], true ) && strpos( $text, '{code}' ) === false ) {
+						$warnings[] = sprintf( 'The %s message must contain {code}; the previous wording was kept.', str_replace( '_', ' ', $key ) );
+						$existing   = Pokbon_Delivery_Settings::get( 'messages' );
+						$text       = (string) ( $existing[ $key ]['text'] ?? $default['text'] );
+					}
+
+					$saved[ $key ] = [
+						'enabled' => ! empty( $on[ $key ] ),
+						'text'    => $text,
+					];
+				}
+
+				Pokbon_Delivery_Settings::save_settings( [ 'messages' => $saved ] );
+
+				$notice = 'Messages saved. They take effect on the next message sent.';
+				if ( $warnings !== [] ) {
+					$error = implode( ' ', $warnings );
+				}
 				break;
 
 			case 'add_rider':
@@ -769,6 +822,10 @@ class Pokbon_Delivery_Admin {
 
 	public static function render_matrix(): void {
 		require POKBON_DELIVERY_DIR . 'admin/pages/matrix.php';
+	}
+
+	public static function render_messages(): void {
+		require POKBON_DELIVERY_DIR . 'admin/pages/messages.php';
 	}
 
 	public static function render_brand(): void {

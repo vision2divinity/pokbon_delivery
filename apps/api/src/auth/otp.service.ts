@@ -2,8 +2,10 @@ import { BadRequestException, HttpException, HttpStatus, Injectable, Logger } fr
 import { ConfigService } from '@nestjs/config';
 import { randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { renderMessage } from '@pokbon-delivery/shared';
 import { PluginClient } from '../plugin/plugin.client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 const scrypt = promisify(scryptCb) as (password: string, salt: string, keylen: number) => Promise<Buffer>;
 
@@ -28,6 +30,7 @@ export class OtpService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly plugin: PluginClient,
+    private readonly settings: SettingsService,
     config: ConfigService,
   ) {
     this.maxPerPhonePerHour = config.getOrThrow<number>('OTP_MAX_PER_PHONE_PER_HOUR');
@@ -55,11 +58,30 @@ export class OtpService {
     });
 
     try {
-      await this.plugin.sendSms(
-        phone,
-        `Your POKBON Delivery code is ${code}. It expires in 5 minutes. Never share it.`,
-        { purpose: 'rider_otp' },
+      /*
+       * The wording comes from the plugin, not from here.
+       *
+       * This was the worst offender of the hardcoded messages: the one thing a
+       * rider reads before they can use the app at all, written into the
+       * delivery service where nobody running the business could reach it.
+       * The literal below is the fallback for a service that has not synced
+       * yet, not the source of truth.
+       */
+      const text = renderMessage(
+        this.settings.get('messages'),
+        'rider_otp',
+        'Your POKBON Delivery code is {code}. It expires in {minutes} minutes. Never share it.',
+        { code, minutes: Math.round(CODE_TTL_SECONDS / 60) },
       );
+      if (text === '') {
+        // Switched off in the plugin. Nothing else can sign a rider in, so
+        // this is refused loudly rather than leaving them at a dead screen.
+        throw new HttpException(
+          'Rider sign-in messages are switched off in POKBON Delivery → Messages.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+      await this.plugin.sendSms(phone, text, { purpose: 'rider_otp' });
     } catch (error) {
       this.logger.error(`OTP SMS to ${phone} failed: ${String(error)}`);
       throw new HttpException('Could not send the verification code. Please try again.', HttpStatus.SERVICE_UNAVAILABLE);

@@ -266,7 +266,102 @@ class Pokbon_Delivery_Orders {
 
 		$order->save();
 
+		self::close_marketplace_order( $order, $status, $payload );
+
 		return true;
+	}
+
+	/**
+	 * Move the WooCommerce order when the delivery finishes.
+	 *
+	 * The order is what the marketplace shows a customer. Recording the
+	 * delivery as meta and a note, and leaving the order in `processing`, left
+	 * somebody who had just signed for their parcel looking at "ongoing" in
+	 * the app — the delivery service knew, the vendor knew, and the only
+	 * person who cared did not.
+	 *
+	 * Only marketplace orders. A courier job for somebody who is not buying
+	 * anything has no WooCommerce order behind it to move, and a freight order
+	 * that a rider delivered locally is still a marketplace order, so `source`
+	 * is the right test rather than the shipping method.
+	 *
+	 * The target status is a setting, because a site that drives its own
+	 * statuses elsewhere should be able to say "leave my orders alone" without
+	 * a code change.
+	 */
+	private static function close_marketplace_order( $order, string $status, array $payload ): void {
+		$source = strtoupper( (string) ( $payload['source'] ?? '' ) );
+		if ( $source !== 'MARKETPLACE' ) {
+			return;
+		}
+
+		$key = null;
+		if ( $status === 'delivered' ) {
+			$key = 'order_status_on_delivered';
+		} elseif ( $status === 'failed' || $status === 'returned' ) {
+			$key = 'order_status_on_failed';
+		}
+		if ( $key === null ) {
+			return;
+		}
+
+		$target = trim( (string) Pokbon_Delivery_Settings::get( $key ) );
+		if ( $target === '' ) {
+			return; // Configured to leave the order alone.
+		}
+
+		if ( $target === 'auto' ) {
+			$target = self::auto_completion_status();
+		}
+
+		// A setting may hold either form. WooCommerce's has_status() and
+		// update_status() want the bare slug; wc_get_order_statuses() keys
+		// carry the wc- prefix.
+		$bare = preg_replace( '/^wc-/', '', $target );
+
+		if ( $order->has_status( $bare ) ) {
+			return; // Already there. Saying so twice would add a second note.
+		}
+
+		$known = array_keys( wc_get_order_statuses() );
+		if ( ! in_array( 'wc-' . $bare, $known, true ) ) {
+			Pokbon_Delivery_Audit::log( 'delivery.order_status_skipped', [
+				'order_id' => $order->get_id(),
+				'wanted'   => $bare,
+				'reason'   => 'not a registered order status',
+			] );
+			return;
+		}
+
+		$order->update_status(
+			$bare,
+			sprintf( 'POKBON Delivery: %s.', $status === 'delivered' ? 'delivered and confirmed by code' : 'delivery ' . $status ),
+			true
+		);
+
+		Pokbon_Delivery_Audit::log( 'delivery.order_status_set', [
+			'order_id' => $order->get_id(),
+			'status'   => $bare,
+			'from'     => $status,
+		] );
+	}
+
+	/**
+	 * A sensible completion status for this site.
+	 *
+	 * Prefers a `delivered` status when the site registers one — this
+	 * marketplace does, alongside "ready to ship" and "in transit" — because
+	 * "delivered" is what actually happened and `completed` may mean something
+	 * else to the vendor payout flow. Falls back to `completed`.
+	 */
+	private static function auto_completion_status(): string {
+		$statuses = function_exists( 'wc_get_order_statuses' ) ? array_keys( wc_get_order_statuses() ) : [];
+		foreach ( [ 'wc-delivered', 'wc-completed' ] as $candidate ) {
+			if ( in_array( $candidate, $statuses, true ) ) {
+				return preg_replace( '/^wc-/', '', $candidate );
+			}
+		}
+		return 'completed';
 	}
 
 	// ─── where things are ───────────────────────────────────────────────────

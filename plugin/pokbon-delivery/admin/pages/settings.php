@@ -144,6 +144,54 @@ $last_sync  = Pokbon_Delivery_Settings::last_sync();
 			</td>
 		</tr>
 		<tr>
+			<th scope="row">When a delivery finishes</th>
+			<td>
+				<?php
+				$statuses = function_exists( 'wc_get_order_statuses' ) ? wc_get_order_statuses() : [];
+				$on_done  = (string) ( $settings['order_status_on_delivered'] ?? 'auto' );
+				$on_fail  = (string) ( $settings['order_status_on_failed'] ?? '' );
+				?>
+				<p>
+					<label for="pkbd-status-done">Move the order to</label><br>
+					<select id="pkbd-status-done" name="order_status_on_delivered">
+						<option value="auto" <?php selected( $on_done, 'auto' ); ?>>Choose for me</option>
+						<option value="" <?php selected( $on_done, '' ); ?>>&mdash; leave the order alone &mdash;</option>
+						<?php foreach ( $statuses as $slug => $label ) : ?>
+							<option value="<?php echo esc_attr( preg_replace( '/^wc-/', '', $slug ) ); ?>"
+								<?php selected( $on_done, preg_replace( '/^wc-/', '', $slug ) ); ?>>
+								<?php echo esc_html( $label ); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</p>
+				<p class="description" style="max-width:56em">
+					A customer who has just signed for their parcel should not still see the order as
+					ongoing. Until this existed the delivery was recorded against the order but the order
+					itself never moved, so the app and the website both went on saying it was in progress.
+					<strong>Choose for me</strong> uses your &ldquo;Delivered&rdquo; status if you have one,
+					and &ldquo;Completed&rdquo; otherwise. Only POKBON orders are touched &mdash; a courier
+					job for somebody who is not buying anything has no order behind it.
+				</p>
+				<p>
+					<label for="pkbd-status-fail">If the delivery fails or comes back</label><br>
+					<select id="pkbd-status-fail" name="order_status_on_failed">
+						<option value="" <?php selected( $on_fail, '' ); ?>>&mdash; leave the order alone &mdash;</option>
+						<?php foreach ( $statuses as $slug => $label ) : ?>
+							<option value="<?php echo esc_attr( preg_replace( '/^wc-/', '', $slug ) ); ?>"
+								<?php selected( $on_fail, preg_replace( '/^wc-/', '', $slug ) ); ?>>
+								<?php echo esc_html( $label ); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</p>
+				<p class="description" style="max-width:56em">
+					Left alone on purpose. A failed delivery is not a cancelled order &mdash; the goods are
+					coming back and somebody has to decide what happens to the money. Set this only if you
+					have a status that means exactly that.
+				</p>
+			</td>
+		</tr>
+		<tr>
 			<th scope="row">Wording at checkout</th>
 			<td>
 				<label>
