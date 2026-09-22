@@ -104,24 +104,37 @@ three larger items.
 
 ### Shelved, to clear first
 
-1. **The app caches its config in SecureStore.** Logs
-   `Value being stored in SecureStore is larger than 2048 bytes`. A future Expo
-   SDK makes that throw, and then the app fails to start rather than falling
-   back. Nothing in the config is secret; it belongs in ordinary storage.
-2. **Message text is hardcoded.** The rider's sign-in code text is in the API
-   (`apps/api/src/auth/otp.service.ts`), the pay-by-link text is in
-   `class-payments.php`, buyer notes are in `class-orders.php`. Against the
-   backend-first rule. Wants a **Messages** screen in the plugin listing every
-   message, its variables and an on/off switch, pushed to the API by the
-   existing settings sync.
-3. **Reconciliation screen.** See `docs/` and the note below on the fee
-   mismatch, which changes what this screen has to show.
-4. **Pricing rows: delete / disable / enable** for zone-pair routes and
-   distance bands. Disabling should fall through to the next rung.
-5. **Order status is never returned to the marketplace on completion.** A
-   POKBON order still reads "ongoing" in the mobile app after the rider has
-   handed over. Needs the completion callback to update the order for web and
-   app orders — POKBON orders only.
+**Audited against the code on 2026-09-22.** Four of the five were already done
+and this list had not been updated — the exact failure the app repo's handoff
+warns about in its own § 0. Status below is what the files say, not what the
+previous note said.
+
+1. ~~**The app caches its config in SecureStore.**~~ **Done.**
+   `apps/mobile/lib/config.ts` now picks a cache in a ladder: a file via
+   `expo-file-system` when it is linked, the keystore when the value is under
+   `KEYSTORE_SAFE_BYTES` (2000), otherwise no cache at all. The last rung costs
+   an offline launch its live theme and nothing else, because `FALLBACK` is
+   complete. `expo-file-system` is required lazily, since importing an unlinked
+   module throws at load and would take the app down instead of one cache.
+2. ~~**Message text is hardcoded.**~~ **Done for the three named strings.**
+   There is a **Messages** page (`admin/pages/messages.php`) listing each
+   message, its variables, when it is sent and an on/off switch. The rider OTP
+   goes through `renderMessage()` in `apps/api/src/auth/otp.service.ts` with the
+   shipped text as a fallback; pay-by-link reads `Settings::message()`.
+   `scripts/check-message-templates.mjs` holds the PHP and TypeScript copies
+   together. **Not covered:** the order notes written by `class-orders.php`,
+   which are admin-facing rather than customer-facing — lower value, still open.
+3. ~~**Reconciliation screen.**~~ **Done** — `admin/pages/reconciliation.php`.
+   Per-delivery money, POKBON vs external, vendor payable, rider payout.
+4. **Pricing rows: delete / disable / enable.** STILL OPEN, and **half built**.
+   `Pokbon_Delivery_Settings::clear_price()` and `clear_band_price()` exist and
+   work; **nothing in `admin/pages/matrix.php` calls them** — zero delete,
+   disable or enable controls on the page. So a wrong row can be overwritten but
+   never removed, and a route cannot be made to fall through to the next rung.
+   The remaining work is the UI, not the storage.
+5. ~~**Order status is never returned to the marketplace on completion.**~~
+   **Done** — `close_marketplace_order()` + `auto_completion_status()` in
+   `class-orders.php`, with the target status owner-configurable in Settings.
 
 ### The three larger ones
 
@@ -208,7 +221,9 @@ three larger items.
    fields sit low on the screen and Android's keyboard hides them, so a rider
    types blind. Needs KeyboardAvoidingView or a keyboard-aware scroll around
    those screens.
-11. **The app does not fit screens with on-screen navigation buttons.** Content
+11. ~~**The app does not fit screens with on-screen navigation buttons.**~~
+   Done: `Screen` in `apps/mobile/components/ui.tsx` wraps in `SafeAreaView`
+   with `edges={['top', 'bottom']}`. Not yet confirmed on the device. Reported
    runs under the gesture/navigation bar on devices that show one. Needs the
    safe-area insets honoured at the bottom, not just the top.
 
@@ -244,6 +259,34 @@ three larger items.
   **two** arguments, against a callback now registered for three. That is the
   compatibility `check-checkout-zones.mjs` exists to hold, now verified against
   the code that actually makes the call.
+
+---
+
+## Live state, 2026-09-22 18:53 UTC
+
+Sampled, not remembered. Re-check before trusting any of it.
+
+| | |
+|---|---|
+| API | up on `:3001`, and reachable through the tunnel (both `/health` 200) |
+| Postgres | up, `pokbon-delivery-postgres` on host port 5435 |
+| Jobs | 11 — 5 DELIVERED, 5 RETURNED, 1 CANCELLED |
+| Riders | 2 APPROVED, **both marked on duty** |
+| Outbox | clean: 142 events, **0 pending**, nothing stuck (`job.status` 110, `sms.send` 21, `inbox.send` 11) |
+| Checks | all 8 pass |
+
+**Two things in that table are wrong in a way that matters.**
+
+The real rider (`+233556780200`) is on duty with a position **468 minutes old**
+— timestamped 11:05:18, which is the minute the phone was locked this morning
+and the background task stopped reporting (item 9). If an order arrived right
+now, dispatch would report "nobody eligible" while the board showed a rider on
+duty. That is item 9 not as a theory but as the current live state.
+
+The seeded test rider (`+233244000111`) is also marked on duty, with a position
+from 2026-09-20. It will never be offered anything because it is permanently
+stale, but it makes the rider list read as two available riders when there is
+at most one. Worth clearing before any dispatch test.
 
 ---
 
