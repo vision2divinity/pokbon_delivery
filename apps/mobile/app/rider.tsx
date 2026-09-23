@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, Field, H1, H2, Notice, P, Row, Tone } from '../components/ui';
 import { ApiError, jobs as jobsApi, rider as riderApi, RiderJob, RiderOffer } from '../lib/api';
 import { config, copy, feature, money } from '../lib/config';
-import { dutyLocationRunning, startDutyLocation, stopDutyLocation } from '../lib/duty-location';
+import { startDutyLocation, stopDutyLocation } from '../lib/duty-location';
 import { useSession } from '../lib/session';
 import { useTheme } from '../lib/theme';
 
@@ -46,9 +46,54 @@ export default function RiderHome() {
   // rider declined that permission and only gets offers while the app is open.
   const [backgroundLocation, setBackgroundLocation] = useState(false);
 
+  /*
+   * Put reporting back after a restart, and never claim it is running when it
+   * is not.
+   *
+   * startDutyLocation() used to be reachable from one place only — the duty
+   * toggle. So a rider whose app was killed (a crash, a reboot, or ColorOS
+   * reclaiming memory, which on the test device is routine) came back to the
+   * server saying onDuty: true, a card reading "On duty", and nothing
+   * reporting their position at all. They looked available, they were not,
+   * and no screen said so. Observed 2026-09-22: a rider on duty with a
+   * position 52 minutes old, silently skipped for every offer.
+   *
+   * isTaskRegisteredAsync() is not enough on its own — a registration
+   * survives the process that owned it — so this re-arms whenever the rider
+   * is on duty or holding a job, and reports honestly when it cannot.
+   */
+  const armed = useRef(false);
   useEffect(() => {
-    void dutyLocationRunning().then(setBackgroundLocation);
-  }, [rider?.onDuty]);
+    let cancelled = false;
+    void (async () => {
+      const shouldReport = Boolean(rider?.onDuty) || active.length > 0;
+
+      // Arm once per launch, not once per render. startDutyLocation() stops a
+      // running task before starting it, which is right when options have
+      // changed and wrong on every tick of a job count — it would drop a fix
+      // each time the list moved, which is exactly the gap this exists to close.
+      if (shouldReport && !armed.current) {
+        armed.current = true;
+        const running = await startDutyLocation({
+          title: copy('duty', 'trackingTitle'),
+          body: copy('duty', 'trackingBody'),
+        });
+        if (!cancelled) setBackgroundLocation(running);
+        if (!running) armed.current = false; // Permission refused; try again later.
+        return;
+      }
+
+      // The last job closed while off duty: nothing is in hand any more.
+      if (!shouldReport && armed.current) {
+        armed.current = false;
+        await stopDutyLocation();
+        if (!cancelled) setBackgroundLocation(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rider?.onDuty, active.length]);
 
   const announce = useCallback((incoming: RiderOffer[]) => {
     const fresh = incoming.filter((o) => !announced.current.has(o.offerId));
@@ -140,11 +185,23 @@ export default function RiderHome() {
       await riderApi.setDuty(goingOn, at);
 
       /*
-       * Start and stop the background reporting with duty itself.
+       * Reporting follows the PARCEL, not the switch.
        *
        * Stopping matters as much as starting: a contractor who has finished
        * for the day is not followed home, and the notification saying they
        * are being tracked disappears with the tracking.
+       *
+       * But a rider holding somebody's goods has not finished. Going off duty
+       * used to call stopDutyLocation() unconditionally, so a rider carrying a
+       * parcel who went off duty — which is the ordinary way to say "no more
+       * work today, let me just finish this one" — went dark mid-journey, and
+       * the customer watching the delivery approach simply stopped seeing it
+       * move. Off duty means "send me no new offers". It has never meant
+       * "abandon the delivery in your hand".
+       *
+       * So the tracking ends when the last job does, not when the switch
+       * flips. Whoever finishes second turns it off: this branch when there is
+       * nothing in hand, and the delivery screen when the final job closes.
        */
       if (goingOn) {
         const running = await startDutyLocation({
@@ -152,7 +209,7 @@ export default function RiderHome() {
           body: copy('duty', 'trackingBody'),
         });
         setBackgroundLocation(running);
-      } else {
+      } else if (active.length === 0) {
         await stopDutyLocation();
         setBackgroundLocation(false);
       }

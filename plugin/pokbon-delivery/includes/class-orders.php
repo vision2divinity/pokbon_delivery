@@ -385,22 +385,48 @@ class Pokbon_Delivery_Orders {
 	}
 
 	/**
-	 * Move the WooCommerce order when the delivery finishes.
+	 * Which setting decides the order status for a given job status.
 	 *
-	 * The order is what the marketplace shows a customer. Recording the
-	 * delivery as meta and a note, and leaving the order in `processing`, left
-	 * somebody who had just signed for their parcel looking at "ongoing" in
-	 * the app — the delivery service knew, the vendor knew, and the only
-	 * person who cared did not.
+	 * A table rather than a chain of ifs, because this is a mapping and the
+	 * next person needs to see the whole of it at once. Anything absent means
+	 * "this step does not move the order" — `arrived` is deliberately absent,
+	 * since a rider at the door is still in transit as far as the customer's
+	 * timeline is concerned, and `en_route` is covered by `picked_up`.
+	 */
+	private const ORDER_STATUS_SETTINGS = [
+		'assigned'  => 'order_status_on_assigned',
+		'picked_up' => 'order_status_on_picked_up',
+		'delivered' => 'order_status_on_delivered',
+		'failed'    => 'order_status_on_failed',
+		'returned'  => 'order_status_on_failed',
+	];
+
+	/**
+	 * Move the WooCommerce order as the delivery progresses.
+	 *
+	 * The order is what the marketplace shows a customer. Recording each step
+	 * as meta and a note, and leaving the order in `processing`, left somebody
+	 * who had just signed for their parcel looking at "ongoing" in the app —
+	 * the delivery service knew, the vendor knew, and the only person who
+	 * cared did not.
+	 *
+	 * Until 2026-09-23 this moved the order only at the END, which fixed the
+	 * "ongoing after delivery" complaint and left a subtler one behind: the
+	 * customer watched "Processing" from payment until hand-over, because the
+	 * app's timeline is driven by the order status and the journey never
+	 * touched it. Observed on #87692 — unchanged through several manual
+	 * refreshes, then straight to Completed. A progress bar that only moves
+	 * when the thing is already finished is not a progress bar.
 	 *
 	 * Only marketplace orders. A courier job for somebody who is not buying
 	 * anything has no WooCommerce order behind it to move, and a freight order
 	 * that a rider delivered locally is still a marketplace order, so `source`
 	 * is the right test rather than the shipping method.
 	 *
-	 * The target status is a setting, because a site that drives its own
-	 * statuses elsewhere should be able to say "leave my orders alone" without
-	 * a code change.
+	 * Every step is a setting, because a site that drives its own statuses
+	 * elsewhere should be able to say "leave my orders alone" without a code
+	 * change — and because a vendor who moves their own orders by hand should
+	 * be able to stop this fighting them.
 	 */
 	private static function close_marketplace_order( $order, string $status, array $payload ): void {
 		$source = strtoupper( (string) ( $payload['source'] ?? '' ) );
@@ -408,12 +434,7 @@ class Pokbon_Delivery_Orders {
 			return;
 		}
 
-		$key = null;
-		if ( $status === 'delivered' ) {
-			$key = 'order_status_on_delivered';
-		} elseif ( $status === 'failed' || $status === 'returned' ) {
-			$key = 'order_status_on_failed';
-		}
+		$key = self::ORDER_STATUS_SETTINGS[ $status ] ?? null;
 		if ( $key === null ) {
 			return;
 		}
@@ -446,11 +467,7 @@ class Pokbon_Delivery_Orders {
 			return;
 		}
 
-		$order->update_status(
-			$bare,
-			sprintf( 'POKBON Delivery: %s.', $status === 'delivered' ? 'delivered and confirmed by code' : 'delivery ' . $status ),
-			true
-		);
+		$order->update_status( $bare, sprintf( 'POKBON Delivery: %s.', self::status_note_for( $status ) ), true );
 
 		Pokbon_Delivery_Audit::log( 'delivery.order_status_set', [
 			'order_id' => $order->get_id(),
@@ -854,6 +871,20 @@ class Pokbon_Delivery_Orders {
 		 * which is the question being asked.
 		 */
 		return $order->get_date_paid() === null;
+	}
+
+	/** Why the order status moved, in the order's own history. */
+	private static function status_note_for( string $status ): string {
+		switch ( $status ) {
+			case 'assigned':
+				return 'a rider has accepted this delivery';
+			case 'picked_up':
+				return 'the rider has collected the parcel';
+			case 'delivered':
+				return 'delivered and confirmed by code';
+			default:
+				return 'delivery ' . $status;
+		}
 	}
 
 	private static function buyer_note_for( string $status, array $payload ): string {

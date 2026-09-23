@@ -144,13 +144,51 @@ $last_sync  = Pokbon_Delivery_Settings::last_sync();
 			</td>
 		</tr>
 		<tr>
-			<th scope="row">When a delivery finishes</th>
+			<th scope="row">While a delivery is running</th>
 			<td>
 				<?php
 				$statuses = function_exists( 'wc_get_order_statuses' ) ? wc_get_order_statuses() : [];
 				$on_done  = (string) ( $settings['order_status_on_delivered'] ?? 'auto' );
 				$on_fail  = (string) ( $settings['order_status_on_failed'] ?? '' );
+				$on_assn  = (string) ( $settings['order_status_on_assigned'] ?? 'ready-to-ship' );
+				$on_pick  = (string) ( $settings['order_status_on_picked_up'] ?? 'in-transit' );
+
+				$status_select = static function ( $id, $name, $current ) use ( $statuses ) {
+					?>
+					<select id="<?php echo esc_attr( $id ); ?>" name="<?php echo esc_attr( $name ); ?>">
+						<option value="" <?php selected( $current, '' ); ?>>&mdash; leave the order alone &mdash;</option>
+						<?php foreach ( $statuses as $slug => $label ) : ?>
+							<option value="<?php echo esc_attr( preg_replace( '/^wc-/', '', $slug ) ); ?>"
+								<?php selected( $current, preg_replace( '/^wc-/', '', $slug ) ); ?>>
+								<?php echo esc_html( $label ); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+					<?php
+				};
 				?>
+				<p>
+					<label for="pkbd-status-assigned">When a rider accepts the job</label><br>
+					<?php $status_select( 'pkbd-status-assigned', 'order_status_on_assigned', $on_assn ); ?>
+				</p>
+				<p>
+					<label for="pkbd-status-picked">When the rider collects the parcel</label><br>
+					<?php $status_select( 'pkbd-status-picked', 'order_status_on_picked_up', $on_pick ); ?>
+				</p>
+				<p class="description" style="max-width:56em">
+					These two are what make the customer&rsquo;s order actually move. Without them the
+					app showed &ldquo;Processing&rdquo; from the moment they paid until the parcel was in
+					their hand &mdash; every step was recorded against the order, but the order itself
+					never changed, so the only screen the customer looks at said nothing had happened.
+					If a status you pick is not registered on this site the step is skipped and logged,
+					so a setting that does not apply here is harmless. Leave either empty if your vendors
+					move their own orders and you would rather this kept out of the way.
+				</p>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row">When a delivery finishes</th>
+			<td>
 				<p>
 					<label for="pkbd-status-done">Move the order to</label><br>
 					<select id="pkbd-status-done" name="order_status_on_delivered">

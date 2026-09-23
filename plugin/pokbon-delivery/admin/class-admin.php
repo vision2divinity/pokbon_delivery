@@ -140,6 +140,8 @@ class Pokbon_Delivery_Admin {
 					'auto_create_jobs'      => ! empty( $_POST['auto_create_jobs'] ),
 					// 'auto' and '' are both meaningful here, so this is not
 					// run through a "pick one of the known statuses" guard.
+					'order_status_on_assigned'  => sanitize_key( (string) wp_unslash( $_POST['order_status_on_assigned'] ?? 'ready-to-ship' ) ),
+					'order_status_on_picked_up' => sanitize_key( (string) wp_unslash( $_POST['order_status_on_picked_up'] ?? 'in-transit' ) ),
 					'order_status_on_delivered' => sanitize_key( (string) wp_unslash( $_POST['order_status_on_delivered'] ?? 'auto' ) ),
 					'order_status_on_failed'    => sanitize_key( (string) wp_unslash( $_POST['order_status_on_failed'] ?? '' ) ),
 					'rename_cod_label'      => ! empty( $_POST['rename_cod_label'] ),

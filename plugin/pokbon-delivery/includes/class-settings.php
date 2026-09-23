@@ -119,6 +119,22 @@ class Pokbon_Delivery_Settings {
 					'text'    => 'POKBON: pay GHS {amount} for order #{order} here: {link}',
 				],
 			],
+			/*
+			 * The order's journey, not just its end.
+			 *
+			 * Recording each step as meta and a note left the customer's app
+			 * showing "Processing" from the moment they paid until the parcel
+			 * was in their hand, because that timeline is driven by the ORDER
+			 * status and nothing moved it. Observed on #87692: unchanged
+			 * through several manual refreshes, then straight to Completed.
+			 *
+			 * These two default to the marketplace's own statuses. On a site
+			 * that has not registered them the mover logs a skip and leaves
+			 * the order alone, so a default that does not apply is harmless
+			 * rather than fatal. Empty means "leave my orders alone".
+			 */
+			'order_status_on_assigned'  => 'ready-to-ship',
+			'order_status_on_picked_up' => 'in-transit',
 			'order_status_on_delivered' => 'auto',
 			// Deliberately empty by default: a failed delivery is not a
 			// cancelled order, and what should happen to the money is a

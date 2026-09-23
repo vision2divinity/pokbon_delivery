@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.7
+ * Version:           0.5.8
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,20 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.8 (2026-09-23) — the customer's order moves while the delivery moves:
+ *   0.5.x moved the order when the delivery FINISHED, which fixed "still
+ *   ongoing after I signed for it" and left a quieter version behind: the
+ *   customer saw "Processing" from the moment they paid until the parcel was
+ *   in their hand. Every step was written to the order as meta and a note, but
+ *   the app's timeline is driven by the order STATUS and nothing moved it —
+ *   so the only screen the customer looks at said nothing had happened.
+ *   Observed on #87692: unchanged through several manual refreshes, then
+ *   straight to Completed. Accepting a job and collecting the parcel now move
+ *   the order too, defaulting to the marketplace's own ready-to-ship and
+ *   in-transit. Each step is a setting, and a status this site has not
+ *   registered is skipped and logged rather than forced, so the defaults are
+ *   harmless where they do not apply and a vendor who moves their own orders
+ *   can tell this to keep out of the way.
  * 0.5.7 (2026-09-22) — a created job is now actually sent to a rider:
  *   "Send to riders now" created a job and sent it to nobody, and so did
  *   automatic dispatch. Nothing anywhere made a first offer: the API's sweep

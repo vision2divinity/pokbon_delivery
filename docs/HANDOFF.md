@@ -99,139 +99,200 @@ Each of these exists because something it now catches reached production.
 
 ## Known open items
 
-Ordered as agreed with Francis on 2026-09-22: the shelved work first, then the
-three larger items.
+**One list, reconciled 2026-09-23.** Two lists had been running in parallel —
+the "shelved / three larger ones" list and an ad-hoc one from the 22nd — and
+they overlapped. Everything below is merged, deduplicated and ordered. Finished
+work is at the bottom under *Closed*, with what proves it, so nobody re-opens
+it. If you add something, add it here rather than starting a third list.
 
-### Shelved, to clear first
+Priority order is what Francis agreed on the 23rd: what makes the system lie to
+somebody comes before what makes it inconvenient.
 
-**Audited against the code on 2026-09-22.** Four of the five were already done
-and this list had not been updated — the exact failure the app repo's handoff
-warns about in its own § 0. Status below is what the files say, not what the
-previous note said.
+---
 
-1. ~~**The app caches its config in SecureStore.**~~ **Done.**
-   `apps/mobile/lib/config.ts` now picks a cache in a ladder: a file via
-   `expo-file-system` when it is linked, the keystore when the value is under
-   `KEYSTORE_SAFE_BYTES` (2000), otherwise no cache at all. The last rung costs
-   an offline launch its live theme and nothing else, because `FALLBACK` is
-   complete. `expo-file-system` is required lazily, since importing an unlinked
-   module throws at load and would take the app down instead of one cache.
-2. ~~**Message text is hardcoded.**~~ **Done for the three named strings.**
-   There is a **Messages** page (`admin/pages/messages.php`) listing each
-   message, its variables, when it is sent and an on/off switch. The rider OTP
-   goes through `renderMessage()` in `apps/api/src/auth/otp.service.ts` with the
-   shipped text as a fallback; pay-by-link reads `Settings::message()`.
-   `scripts/check-message-templates.mjs` holds the PHP and TypeScript copies
-   together. **Not covered:** the order notes written by `class-orders.php`,
-   which are admin-facing rather than customer-facing — lower value, still open.
-3. ~~**Reconciliation screen.**~~ **Done** — `admin/pages/reconciliation.php`.
-   Per-delivery money, POKBON vs external, vendor payable, rider payout.
-4. **Pricing rows: delete / disable / enable.** STILL OPEN, and **half built**.
-   `Pokbon_Delivery_Settings::clear_price()` and `clear_band_price()` exist and
-   work; **nothing in `admin/pages/matrix.php` calls them** — zero delete,
-   disable or enable controls on the page. So a wrong row can be overwritten but
-   never removed, and a route cannot be made to fall through to the next rung.
-   The remaining work is the UI, not the storage.
-5. ~~**Order status is never returned to the marketplace on completion.**~~
-   **Done** — `close_marketplace_order()` + `auto_completion_status()` in
-   `class-orders.php`, with the target status owner-configurable in Settings.
+### 1. Position reporting stops, and nothing says so
 
-### The three larger ones
+The single most damaging open item: a rider who is working, available, and
+silently receiving nothing.
 
-6. ~~**The delivery fee charged at checkout is not the fee the job is priced
-   at.**~~ **Closed 2026-09-22, both platforms.** On #87619 the buyer paid
-   GH¢30 (the site's own regional rate), the job recorded GH¢50 (the zone
-   matrix) and GH¢52 was paid out — POKBON lost GH¢22 on a delivery the board
-   showed as earning GH¢10.
+Two faults, probably one root cause:
 
-   Fixed in two halves. The job records **what was actually charged**
-   (`class-orders.php` reads `get_shipping_total()`), and checkout **prices
-   from the matrix**: the buyer picks the area they are in and pays that route.
-   Proven on #87675 — Charged GH¢50 / Matrix GH¢50 / Rider GH¢40 / Kept GH¢10.
+- **Never re-armed after a restart.** `startDutyLocation()` is called from
+  exactly one place — the duty toggle in `apps/mobile/app/rider.tsx`. On launch,
+  `dutyLocationRunning()` only *displays* a flag. So a rider whose app is killed
+  (crash, reboot, or the OS reclaiming memory) comes back with the server saying
+  `onDuty: true`, the card showing **On duty**, and nothing reporting.
+- **Stops when the screen goes off.** Observed 2026-09-22: one fix at 11:05:18
+  and nothing for the following five minutes, foreground service running and the
+  notification showing. Later the same evening it reported once on a duty toggle
+  and stopped again **with the app in the foreground**.
 
-   The app followed the same day (Mobile App 1.21.0, Delivery 0.5.6). It had
-   the worse version of the same bug: one flat Door Delivery fee for every
-   address in Ghana, and it never called `/delivery-regions` at all. Now
-   `/delivery-regions?product_ids=` returns priced areas per region,
-   `/cart/validate` quotes the chosen one, and the order proxy re-prices it
-   before saving — the client picks *where*, the server decides *how much*.
-   The chosen area rides on through the same `pokbon_checkout_order_created`
-   action the web checkout fires, so a phone order reaches dispatch with the
-   buyer's own area on it and nobody guesses a zone from an address.
+The device is an **OPPO CPH2711, ColorOS, Android 16**, and the app is **not on
+the Doze whitelist** — the prime suspect, and it would explain both faults at
+once: ColorOS kills the app, the foreground service dies with it, and nothing
+ever restarts it.
 
-   **The app half is committed but NOT BUILT.** A phone still shows the old flat
-   fee, because the change is JavaScript in a bundle the installed APK does not
-   have. EAS Update cannot carry it either — `checkAutomatically` is
-   `ON_ERROR_RECOVERY` and nothing calls `checkForUpdateAsync()`, so a published
-   update would sit there unfetched. It needs a binary.
+Still to rule out: battery optimisation for `com.pokbongroup.delivery`;
+`Accuracy.Balanced` resolving to a network provider Doze suspends, where `High`
+would not; and Android *batching* fixes for delivery on unlock, which would show
+as a burst of pings the instant the screen comes on.
 
-   Everything the release needs is written up in the app's own repo:
-   **`docs/DELIVERY_ZONE_PRICING_2026-09-22.md`** in `POKBON_Mobile_App` (app
-   commit `b78f1445` on `main`), pointed at from the top of that repo's
-   `HANDOFF.md`. Deployment is handled in a separate session; do not duplicate
-   that doc here, update it there.
+Whatever the cause, the duty card must stop claiming "On duty" when nothing is
+being reported. A confident lie is worse than the outage.
 
-   Nothing is half-broken meanwhile. An old app never sends `delivery_zone`, so
-   the live plugin prices it exactly as it did before — the two halves can stay
-   out of step indefinitely.
-7. **No arrival guard.** On #87619 the rider went from assigned to "at your
-   door" in **30 seconds**, which would have sent a real customer an SMS and a
-   payment prompt while the rider was still at the shop. The arrival event now
-   carries the rider's GPS, so a distance check is straightforward; a time
-   floor alone would punish the honest short delivery. Allow an override with a
-   recorded reason for bad GPS.
-8. **The tunnel is a dev-only stopgap.** It dropped twice in one session with
-   `cloudflared` still running as a process. `ops/tunnel-watchdog.sh` is a
-   plaster. The API wants a VPS.
+### 2. Tracking follows the duty switch, not the parcel
 
-9. **The rider app stops reporting position when the screen is off.** STILL
-   OPEN, and the most important one left. Built since the first report:
-   `apps/mobile/lib/duty-location.ts` — a TaskManager task with a foreground
-   service and a persistent notification, `timeInterval: 60_000`,
-   `distanceInterval: 0` (Android treats the two as **both** conditions, so
-   100m meant a stationary rider reported nothing), and stop-then-start on
-   every duty toggle so a task registered days ago cannot keep running old
-   options.
+Going off duty calls `stopDutyLocation()` even when the rider is carrying a job,
+so the customer's tracking goes dark mid-journey. Reporting should continue
+while any job is active, regardless of duty.
 
-   The notification shows and the service runs. **Fixes still stop the moment
-   the phone is locked** — sampled 2026-09-22 11:05-11:10: one fix at 11:05:18
-   and nothing for the following five minutes. Next things to rule out, in
-   order: battery optimisation for `com.pokbongroup.delivery` (Tecno, Infinix
-   and Samsung all throttle hard regardless of a foreground service); whether
-   `Accuracy.Balanced` is resolving to a network provider that Doze suspends,
-   where `Accuracy.High` would not; and whether Android is *batching* fixes and
-   delivering them on unlock, which would show as a burst of pings the instant
-   the screen comes on.
+Agreed design (2026-09-23): off duty means **"send me no new work"**, never
+"abandon the parcel you are holding". A rider mid-delivery may go off duty, but
+the app should say so plainly — *"You still have a delivery in hand"* — the
+dispatcher should see "off duty, carrying job X", and position must keep
+flowing until the parcel is handed over.
 
-   The original report:
-   A JavaScript timer is suspended when Android backgrounds the app, so a
-   rider with the phone in a pocket goes stale after five minutes
-   (`location_stale_seconds`) and is silently skipped for every offer. Nothing
-   on their screen says so, and the dispatcher sees only "nobody eligible".
-   Observed 2026-09-22: 52 minutes stale with the rider on duty a kilometre
-   from the pickup. Needs background location (expo-location's task manager)
-   rather than a longer staleness window, since the window is what stops jobs
-   going to riders who are no longer where they say.
+### 3. The customer's order sits on "Processing" until the very end
 
-10. ~~**The rider app's keyboard covers the input it is there to fill.**~~
-   Done 2026-09-22: `Screen` in `apps/mobile/components/ui.tsx` is wrapped in a
-   KeyboardAvoidingView with `keyboardShouldPersistTaps="handled"` and bottom
-   padding for the navigation bar. Not yet confirmed on the device. Reported
-   2026-09-22 while entering the delivery code. The code and payment-link
-   fields sit low on the screen and Android's keyboard hides them, so a rider
-   types blind. Needs KeyboardAvoidingView or a keyboard-aware scroll around
-   those screens.
-11. ~~**The app does not fit screens with on-screen navigation buttons.**~~
-   Done: `Screen` in `apps/mobile/components/ui.tsx` wraps in `SafeAreaView`
-   with `edges={['top', 'bottom']}`. Not yet confirmed on the device. Reported
-   runs under the gesture/navigation bar on devices that show one. Needs the
-   safe-area insets honoured at the bottom, not just the top.
+`apply_status()` in `class-orders.php` writes an order **note** for every job
+status and only changes the WooCommerce **status** at completion. The mobile
+app's timeline is driven by order status, so it shows *Processing* through
+pickup and transit and then jumps to *Completed*. Observed on #87692:
+unchanged through several manual refreshes, the first movement arriving only at
+the arrival/OTP step, which was an `inbox.send` notification and not a status
+change at all.
+
+The statuses already exist in the marketplace plugin — `ready-to-ship`,
+`in-transit`, `delivered` (`class-vendor-order-statuses.php`). Nothing is
+missing but the mapping.
+
+### 4. "Could not deliver" has no reason and no evidence
+
+The rider app offers **Could not deliver** with nowhere to say why and no way to
+attach a photo — while the copy tells riders to document damage. A rider who
+genuinely cannot complete a delivery is either stuck in the flow or forced to
+lie about it.
+
+Wants: a reason picker, an optional photo, and both sent to the admin portal for
+review. `job_photos` exists in the schema and the upload path exists; the
+failure reason is carried on the status callback already (`failureReason`).
+
+### 5. The admin portal cannot close, complete or abort a live delivery
+
+When a rider reports they cannot finish, there is no way for a dispatcher to
+resolve it. Needed alongside #4, and needed for #6.
+
+### 6. Customer cancellation after a rider has collected
+
+Design agreed 2026-09-23, not yet built. The principle: **cancelling an order
+never cancels a delivery that is already carrying goods — it converts it into a
+return.** Where a parcel physically is cannot be undone by a status change.
+
+| When | What happens | Rider paid |
+|---|---|---|
+| Before a job exists / before assignment | cancel outright | nothing owed |
+| Assigned, not yet collected | job → `CANCELLED`, rider told at once | call-out fee |
+| Collected, in transit | job → **return leg**, parcel goes back to the vendor | return leg |
+
+After `processing` a customer cancellation is a **request**, not an action — the
+app already says "Request cancellation" — landing in the admin portal for a
+human, because only a human knows whether the rider is at the door or two
+streets from the vendor. `RETURNED` and the failed-trip uplift already exist;
+what is missing is the instruction reaching the rider's screen.
+
+**Note a side effect of the COD fix (Mobile App 1.21.2):** app COD orders used
+to sit at `pending` for ever and were therefore always self-cancellable in one
+tap. They now go to `processing` immediately, so that button becomes a request.
+Believed correct — an order with a rider en route should not vanish on a tap —
+but it is a customer-facing change that arrived as a side effect and should be
+agreed rather than discovered.
+
+### 7. No arrival guard
+
+A rider can go from assigned to "at your door" in seconds, sending a real
+customer an SMS, a delivery code and a payment prompt while the rider is still
+at the shop. Measured on #87684: **94 seconds** assigned → arrived, and **28
+seconds** picked-up → arrived, with the rider telling us at that moment they
+were still heading to the customer.
+
+The arrival event already carries the rider's GPS, so a distance check is
+straightforward. A time floor alone would punish the honest short delivery.
+Allow an override with a recorded reason, for bad GPS.
+
+### 8. A stale rider is offered work anyway, and the distance is invented
+
+In `dispatch.service.ts` `pickCandidate()`, a rider whose last position is older
+than `location_stale_seconds` gets `distance = null` but stays eligible when
+`inZone` is true — their `base_zone_code` equals the job's pickup zone. The
+offer then records `distanceMetres` as the full `offer_radius_metres`.
+
+So `base_zone_code` is not a preference, it is a **staleness override**: it lets
+dispatch offer a job to a rider it cannot locate at all. That is why #87684 was
+accepted by a rider whose position was nine minutes old against a five-minute
+threshold, and why an offer showing exactly **8000 m means "position unknown"**,
+not "8 km away".
+
+Decide deliberately whether that override is wanted. Either way, an offer made
+on the fallback should say so on both screens rather than reporting a distance
+it invented.
+
+### 9. Rider home location, in the admin
+
+Francis asked (2026-09-22) for a rider to be assignable to a location they work
+from, easily changed when they move: *"sometimes riders move and might want to
+work from where they are."*
+
+**Half built already** — `riders.base_zone_code` is in the schema, set on the
+live test rider, and referenced in `admin/pages/riders.php`. Finish and expose
+it rather than designing it fresh. Settle #8 first, since that field is what
+currently overrides staleness.
+
+### 10. Pricing rows: delete / disable / enable
+
+Half built. `Pokbon_Delivery_Settings::clear_price()` and `clear_band_price()`
+exist and work; **nothing in `admin/pages/matrix.php` calls them** — zero
+delete, disable or enable controls on the page. A wrong row can be overwritten
+but never removed, and a route cannot be made to fall through to the next rung.
+The work left is UI, not storage.
+
+### 11. Notification channels
+
+Status updates should be in-app, with real SMS reserved for arrival and the
+payment approval. `inbox.send` exists but fires at one moment only and can
+address only a marketplace buyer. Related to #3 but distinct: #3 is the order's
+own status, this is who gets told and over which channel.
+
+### 12. The tunnel is a dev-only stopgap
+
+It dropped twice in one session with `cloudflared` still running, and it dies
+whenever this machine's session ends. `ops/tunnel-watchdog.sh` is a plaster.
+The API wants a VPS.
+
+### 13. The rider app build, and the marketplace app build
+
+The rider app is a dev build driven by Metro; JS changes need only a reload, and
+a rebuild only when something native moves. The marketplace app's zone-pricing
+release is handled in a separate session — see
+`docs/DELIVERY_ZONE_PRICING_2026-09-22.md` in `POKBON_Mobile_App`. Do not
+duplicate that document here.
+
+### Unresolved, needs one fact
+
+- **An order that reached the job board but never appeared in the rider app.**
+  Reported 2026-09-22. If it was #87683 it is explained — that job was created
+  before the auto-offer fix and never offered. If it was a later one, it is
+  something not yet seen. **Ask Francis which order number.**
+- **Plugin duplicates that return after deletion.** Three copies each of POKBON
+  Delivery and POKBON Mobile App appear in the plugin list, and deleting one
+  brings it back on refresh. WordPress does not behave that way on its own:
+  suspect an object cache serving a stale list, or the host restoring files.
+  Parked at Francis's request. **Never delete a POKBON Mobile App copy** — its
+  `uninstall.php` drops tables, and a duplicate carries the same code and the
+  same table names. POKBON Delivery has no `uninstall.php` and is safe to delete.
 
 ### Smaller, noted in passing
 
-- Notification channels: status updates should be in-app, with real SMS
-  reserved for arrival and the payment approval. `inbox.send` already exists
-  but fires at one moment only and can address only a marketplace buyer.
+- Order notes in `class-orders.php` are still hardcoded. Admin-facing, low value.
 - Two WPCode snippets (#24794, #40567) still send email and SMS inline during
   checkout, adding seconds per order. They live in the site database, so they
   cannot be changed from source.
@@ -240,25 +301,47 @@ previous note said.
   and `woocommerce_thankyou` without setting its processed guard.
 - `apps/mobile/android/` is committed prebuild output. Harmless, could be
   gitignored.
-- **`pokbon-checkout` lives at `C:\Users\POKBON Marketplace\pokbon-checkout`**
-  — a sibling of this repo, not inside it. v1.1.0, and it carries all three
-  filter call sites (`class-pokbon-shipping.php`, `templates/checkout-form.php`,
-  `class-pokbon-handler.php`). It is the plugin that *asks*; this one answers.
+- **`pokbon-checkout` lives at `C:\Users\POKBON Marketplace\pokbon-checkout`** —
+  a sibling of this repo, v1.1.0, carrying all three filter call sites. It is
+  **not under version control**, and neither are several plugins beside it. No
+  history, no way to see what changed or undo a bad edit.
 
-  An earlier note here claimed no local copy existed and told you to pull the
-  live one down. That was wrong — the search behind it looked through OneDrive
-  and Downloads and never looked one directory up from this repo. The stale
-  v1.0.0 copy under `~/OneDrive/Desktop/POKBON Marketplace/` is a decoy.
+---
 
-  **It is not under version control.** No `.git`, no history, no way to see what
-  changed or undo a bad edit. Several plugins beside it are in the same
-  position. Worth putting in a repo before the next change to any of them.
+### Closed
 
-  Useful confirmation from finding it: `class-pokbon-shipping.php:84` calls
-  `apply_filters( 'pokbon_checkout_delivery_zones', array(), $code )` with
-  **two** arguments, against a callback now registered for three. That is the
-  compatibility `check-checkout-zones.mjs` exists to hold, now verified against
-  the code that actually makes the call.
+Kept with their evidence, so none of this gets re-investigated.
+
+- **Config cached in SecureStore** — `apps/mobile/lib/config.ts` picks a cache
+  in a ladder: a file via `expo-file-system` when linked, the keystore under
+  `KEYSTORE_SAFE_BYTES`, otherwise none. Required lazily, because importing an
+  unlinked module throws at load.
+- **Message text hardcoded** — a Messages page (`admin/pages/messages.php`),
+  `renderMessage()` in the API, `Settings::message()` in the plugin, held
+  together by `scripts/check-message-templates.mjs`.
+- **Reconciliation screen** — `admin/pages/reconciliation.php`.
+- **Order status never returned to the marketplace on completion** —
+  `close_marketplace_order()` + `auto_completion_status()`, target status
+  configurable. (Completion only; the *journey* is item #3.)
+- **The fee charged is not the fee the job is priced at** — closed on both
+  platforms. The job records what was actually charged; checkout prices from the
+  matrix. Web proven on #87675 (Charged ₵50 / Matrix ₵50 / Rider ₵40 / Kept ₵10).
+  App shipped in Mobile App 1.21.0 + Delivery 0.5.6.
+- **Auto-created jobs were never offered** (was "C") — fixed in Delivery 0.5.7.
+  `offer_new_jobs()` offers as jobs are created, on both the automatic path and
+  the "Send to riders now" button, which had been promising riders and
+  delivering silence. Proven on #87690: created → offered in **749 ms**,
+  accepted 45 s later, and the offer carried a real **457 m**, not the fallback.
+- **App COD orders never dispatched** (was "A") — fixed in Mobile App 1.21.2.
+  App orders are clamped to `pending` by design, and COD has no later payment to
+  move them on, so they were invisible to everything waiting on `processing`.
+  Now mirrors `WC_Gateway_COD`, last in `create_order()` so the fee is re-priced
+  and the area stamped first. Proven end to end on **#87692**, placed from the
+  app, cash on delivery, run to Completed with nothing pushed by hand.
+- **Keyboard covering the rider's inputs; content under the navigation bar** —
+  `KeyboardAvoidingView` and `SafeAreaView edges={['top','bottom']}` in
+  `apps/mobile/components/ui.tsx`. Not separately confirmed on the device, but
+  several flows have been driven through it since.
 
 ---
 
