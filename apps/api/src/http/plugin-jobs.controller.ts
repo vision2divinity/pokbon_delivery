@@ -108,6 +108,17 @@ export class PluginJobsController {
     return { offered: Boolean(offer), offer };
   }
 
+  /** Dispatcher closes a failed job: the goods are back with the sender. */
+  @PluginAuth()
+  @Post('jobs/:id/returned')
+  @HttpCode(HttpStatus.OK)
+  async markReturned(@Param('id') id: string, @Body() body: unknown) {
+    // Same shape as cancel: a reason, and who decided it.
+    const parsed = cancelJobSchema.extend({ actor: cancelJobSchema.shape.reason.optional() }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => i.message));
+    return toAdminJobView(await this.jobs.returnedFromPlugin(id, parsed.data.reason, parsed.data.actor ?? 'marketplace'));
+  }
+
   /** Audited code bypass with a mandatory reason. PRD § 7. */
   @PluginAuth()
   @Post('jobs/:id/bypass-code')

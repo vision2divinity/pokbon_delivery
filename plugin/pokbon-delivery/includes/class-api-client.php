@@ -103,6 +103,14 @@ class Pokbon_Delivery_API_Client {
 		return self::post( '/jobs', $payload, self::TIMEOUT_ORDER_PATH );
 	}
 
+	/** Close a failed job from the office: the goods are back with the sender. */
+	public static function return_job( string $job_id, string $reason, string $actor ) {
+		return self::post( '/jobs/' . rawurlencode( $job_id ) . '/returned', [
+			'reason' => $reason,
+			'actor'  => $actor,
+		] );
+	}
+
 	public static function cancel_job( string $job_id, string $reason, string $actor ) {
 		return self::post( '/jobs/' . rawurlencode( $job_id ) . '/cancel', [
 			'reason' => $reason,

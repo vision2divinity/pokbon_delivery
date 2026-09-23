@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.10
+ * Version:           0.5.11
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,19 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.11 (2026-09-23) — a dispatcher can close a delivery that cannot finish:
+ *   The handlers for cancelling, assigning and bypassing the code had all been
+ *   written and the job screen rendered a button for almost none of them, so a
+ *   rider reporting they could not finish left a job nobody could resolve.
+ *   There is now a "Close this delivery" section: goods back with the sender,
+ *   or call it off, each needing a reason in words.
+ *   Which controls appear is decided by the delivery service, not by this page.
+ *   It owns the lifecycle, so it says what is open — otherwise the transition
+ *   table would exist twice and drift. Before this every control showed on
+ *   every job, including "Bypass the code" on a delivered one.
+ *   Calling off is offered only while the goods are still with the vendor.
+ *   After collection a delivery that goes wrong is failed, then returned,
+ *   because where a parcel physically is cannot be undone by a status change.
  * 0.5.10 (2026-09-23) — the web area list follows the region, and you can say
  *   where you do not go:
  *   The website rendered one region's areas — whichever the page loaded with —

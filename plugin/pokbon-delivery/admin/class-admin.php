@@ -459,6 +459,28 @@ class Pokbon_Delivery_Admin {
 				$notice = 'Code bypassed. The buyer is told this was confirmed by POKBON, not by code.';
 				break;
 
+			case 'return_job':
+				$job_id = sanitize_text_field( (string) wp_unslash( $_POST['job_id'] ?? '' ) );
+				$reason = sanitize_text_field( (string) wp_unslash( $_POST['reason'] ?? '' ) );
+
+				$result = Pokbon_Delivery_API_Client::return_job(
+					$job_id,
+					$reason ?: 'Closed by POKBON: goods back with the sender',
+					wp_get_current_user()->user_login
+				);
+				if ( is_wp_error( $result ) ) {
+					$error = $result->get_error_message();
+					break;
+				}
+
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_JOB_CANCELLED, [
+					'job_id' => $job_id,
+					'reason' => $reason,
+					'closed' => 'returned',
+				] );
+				$notice = 'Job closed: the goods are back with the sender.';
+				break;
+
 			case 'cancel_job':
 				$job_id = sanitize_text_field( (string) wp_unslash( $_POST['job_id'] ?? '' ) );
 				$reason = sanitize_text_field( (string) wp_unslash( $_POST['reason'] ?? '' ) );

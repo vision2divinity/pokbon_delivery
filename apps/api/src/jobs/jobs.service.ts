@@ -582,6 +582,26 @@ export class JobsService {
     });
   }
 
+  /**
+   * Goods are back with the vendor or sender, recorded by a dispatcher.
+   *
+   * The rider's own returned() needs the rider: it proves who carried the
+   * parcel back. But a rider whose phone has died, or who has stopped
+   * answering, leaves a FAILED job that nobody can close — the goods are
+   * accounted for in the real world and the system says the delivery is still
+   * open for ever. So a dispatcher can close it, and the record says it was
+   * them rather than pretending the rider did it.
+   */
+  async returnedFromPlugin(jobId: string, reason: string, actor: string): Promise<Job> {
+    const job = await this.mustFind(jobId);
+    return this.prisma.$transaction((tx) =>
+      this.transition(tx, job, JobStatus.RETURNED, `plugin:${actor}`, {
+        data: { returnedAt: new Date() },
+        detail: { detail: reason, closedBy: actor, byDispatcher: true },
+      }),
+    );
+  }
+
   /** Goods are back with the vendor or sender. Terminal. */
   async returned(jobId: string, riderId: string, input: { detail?: string; photo?: PhotoInput }): Promise<Job> {
     const job = await this.mustOwn(jobId, riderId);

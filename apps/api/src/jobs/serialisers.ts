@@ -1,5 +1,36 @@
 import type { Job, JobEvent, JobOffer, JobPhoto, Rider } from '@prisma/client';
+import { canTransition, JobStatus } from '@pokbon-delivery/shared';
 import { fromMinor } from '../settings/settings.service';
+
+/**
+ * What a dispatcher may do to this job, right now.
+ *
+ * Derived from the lifecycle rather than restated in the admin screen. The
+ * plugin had handlers for cancelling, assigning and bypassing the code and
+ * rendered a button for none of them, so a dispatcher looking at a stuck job
+ * could see everything about it and do nothing — and the obvious fix, adding
+ * buttons, would have meant a second copy of the transition table in PHP,
+ * drifting out of step with this one.
+ *
+ * Offering an action the lifecycle will refuse is the same failure as
+ * demanding a photo the app cannot take: a control that exists to be pressed
+ * and then says no.
+ */
+function allowedActionsFor(status: string) {
+  const from = status as JobStatus;
+  return {
+    /** Put it in front of a rider, or the next one. */
+    offer: canTransition(from, JobStatus.OFFERED),
+    /** Hand it to a named rider. */
+    assign: canTransition(from, JobStatus.ASSIGNED),
+    /** Call it off. Only before the goods are in a rider's hands. */
+    cancel: canTransition(from, JobStatus.CANCELLED),
+    /** Goods are back with the vendor or sender. Closes a failed job. */
+    markReturned: canTransition(from, JobStatus.RETURNED),
+    /** Accept the delivery without the code. Audited, reason required. */
+    bypassCode: canTransition(from, JobStatus.CODE_VERIFIED),
+  };
+}
 
 /**
  * What a rider may see of a job. PRD § 9c.
@@ -117,6 +148,7 @@ export function toAdminJobView(
       priceMatched: job.priceMatched,
     },
     rider: job.rider ? toAdminRiderSummary(job.rider) : null,
+    allowedActions: allowedActionsFor(job.status),
     events: job.events ?? [],
     photos: job.photos ?? [],
     offers:

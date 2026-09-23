@@ -396,8 +396,29 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 			</p>
 
 			<?php
+			/*
+			 * What a dispatcher may do, decided by the API.
+			 *
+			 * The lifecycle lives in the delivery service, so it says which
+			 * actions are open rather than this page keeping a second copy of
+			 * the transition table and drifting out of step with it. Before
+			 * this, every control showed on every job: "Bypass the code" on a
+			 * delivered one, "Assign a rider" on a cancelled one. A button that
+			 * exists to be pressed and then refuses is the same failure as
+			 * demanding a photo the app cannot take.
+			 *
+			 * Defaults are permissive so an older API that does not send the
+			 * field leaves the page working exactly as it did.
+			 */
+			$can = is_array( $job['allowedActions'] ?? null ) ? $job['allowedActions'] : [];
+			$may = static function ( $what ) use ( $can ) {
+				return ! array_key_exists( $what, $can ) || ! empty( $can[ $what ] );
+			};
+			?>
+
+			<?php
 			$riders = Pokbon_Delivery_API_Client::riders( 'APPROVED' );
-			if ( ! is_wp_error( $riders ) && ! empty( $riders['riders'] ) ) :
+			if ( $may( 'assign' ) && ! is_wp_error( $riders ) && ! empty( $riders['riders'] ) ) :
 				?>
 				<?php Pokbon_Delivery_Admin::form_open( 'assign_job' ); ?>
 					<input type="hidden" name="job_id" value="<?php echo esc_attr( $detail_id ); ?>">
@@ -413,16 +434,63 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 				</form>
 			<?php endif; ?>
 
-			<p style="margin-top:1em">
-				<?php echo Pokbon_Delivery_Admin::button( 'offer_job', 'Offer to the nearest rider', [ 'job_id' => $detail_id ] ); ?>
-			</p>
+			<?php if ( $may( 'offer' ) ) : ?>
+				<p style="margin-top:1em">
+					<?php echo Pokbon_Delivery_Admin::button( 'offer_job', 'Offer to the nearest rider', [ 'job_id' => $detail_id ] ); ?>
+				</p>
+			<?php endif; ?>
 
-			<?php Pokbon_Delivery_Admin::form_open( 'bypass_code' ); ?>
-				<input type="hidden" name="job_id" value="<?php echo esc_attr( $detail_id ); ?>">
-				<input type="text" name="reason" class="regular-text" style="width:32em"
-					placeholder="Why the code cannot be used — at least a sentence" required minlength="10">
-				<button class="button" type="submit">Bypass the code</button>
-			</form>
+			<?php if ( $may( 'bypassCode' ) ) : ?>
+				<?php Pokbon_Delivery_Admin::form_open( 'bypass_code' ); ?>
+					<input type="hidden" name="job_id" value="<?php echo esc_attr( $detail_id ); ?>">
+					<input type="text" name="reason" class="regular-text" style="width:32em"
+						placeholder="Why the code cannot be used — at least a sentence" required minlength="10">
+					<button class="button" type="submit">Bypass the code</button>
+				</form>
+			<?php endif; ?>
+
+			<?php if ( $may( 'markReturned' ) || $may( 'cancel' ) ) : ?>
+				<h3 style="margin-top:2em">Close this delivery</h3>
+				<p class="description" style="max-width:56em">
+					For when a rider has told you they cannot finish it. Both need a reason, because
+					the reason is what somebody reads in a month when they are working out what
+					happened &mdash; and because a delivery that ends with no explanation is
+					indistinguishable from one that was forgotten.
+				</p>
+
+				<?php if ( $may( 'markReturned' ) ) : ?>
+					<?php Pokbon_Delivery_Admin::form_open( 'return_job' ); ?>
+						<input type="hidden" name="job_id" value="<?php echo esc_attr( $detail_id ); ?>">
+						<p>
+							<input type="text" name="reason" class="regular-text" style="width:32em"
+								placeholder="Where the goods went, and who confirmed it" required minlength="10">
+							<button class="button" type="submit">Goods are back with the sender</button>
+						</p>
+					</form>
+					<p class="description" style="max-width:56em">
+						Closes a failed delivery once the parcel is accounted for. The rider normally
+						does this themselves; do it here when their phone has died or they have
+						stopped answering, and the record will say it was you rather than them.
+					</p>
+				<?php endif; ?>
+
+				<?php if ( $may( 'cancel' ) ) : ?>
+					<?php Pokbon_Delivery_Admin::form_open( 'cancel_job' ); ?>
+						<input type="hidden" name="job_id" value="<?php echo esc_attr( $detail_id ); ?>">
+						<p>
+							<input type="text" name="reason" class="regular-text" style="width:32em"
+								placeholder="Why this delivery is being called off" required minlength="10">
+							<button class="button" type="submit">Call it off</button>
+						</p>
+					</form>
+					<p class="description" style="max-width:56em">
+						Only while the goods are still with the vendor. Once a rider has collected the
+						parcel there is nothing to cancel &mdash; it has to come back, which is the
+						failed-then-returned path above. That is the lifecycle's rule, not this
+						page&rsquo;s: where a parcel physically is cannot be undone by a status.
+					</p>
+				<?php endif; ?>
+			<?php endif; ?>
 
 			<h3>Event log</h3>
 			<table class="widefat striped" style="max-width:60em">
