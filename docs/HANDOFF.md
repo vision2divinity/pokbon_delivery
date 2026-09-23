@@ -219,7 +219,25 @@ The arrival event already carries the rider's GPS, so a distance check is
 straightforward. A time floor alone would punish the honest short delivery.
 Allow an override with a recorded reason, for bad GPS.
 
-### 8. A stale rider is offered work anyway, and the distance is invented
+### 8. ~~A stale rider is offered work anyway~~ — DECIDED, working as intended
+
+**Closed 2026-09-23 by Francis's decision, not by code.** The home-station
+bypass stays and the radius stays at 8 km, dropping to about 5 km once there
+are riders in more places. His reasoning: he does not want riders making long
+journeys just to collect a parcel and come back.
+
+So a rider's `base_zone_code` is deliberately a radius exemption for their own
+station, and the radius governs everywhere else. Proven on order #87712: the
+rider was **14.78 km** from the Ashongman pickup — well outside 8 km — and was
+offered those two jobs only because their base zone matched. The third job,
+collecting from Madina, was never offered to anyone, which is the intended
+consequence.
+
+Worth knowing rather than worth changing: an offer that records
+`distanceMetres` equal to `offer_radius_metres` exactly (8000) means the
+position was too stale to measure, not that the rider was 8 km away.
+
+### 8b. The original text, kept because the mechanism still matters
 
 In `dispatch.service.ts` `pickCandidate()`, a rider whose last position is older
 than `location_stale_seconds` gets `distance = null` but stays eligible when
@@ -275,6 +293,22 @@ a rebuild only when something native moves. The marketplace app's zone-pricing
 release is handled in a separate session — see
 `docs/DELIVERY_ZONE_PRICING_2026-09-22.md` in `POKBON_Mobile_App`. Do not
 duplicate that document here.
+
+### 14. ~~A job nobody could take is never retried~~ — done 2026-09-23
+
+`offerNext()` was only ever called on an event: a job created, an offer
+expiring, a dispatcher pressing a button. Nothing asked again on its own, so a
+job created while every rider was off duty stayed at CREATED for ever, and one
+whose cascade found nobody stayed at UNFULFILLED for ever.
+
+A `retryStranded()` sweep now runs every 60s over CREATED and UNFULFILLED jobs
+with no live offer, bounded to 24 hours. Safe on a timer because `offerNext()`
+already refuses to act twice — it no-ops on a live offer, never re-offers to a
+rider who declined, and respects the cascade depth. So it asks again; it does
+not ask harder.
+
+Bounded by age on purpose: a job nobody has taken in a day is waiting for a
+human, and retrying it for ever would hide that rather than surface it.
 
 ### Unresolved, needs one fact
 

@@ -181,6 +181,57 @@ export class DispatchService {
   }
 
   /** Called by the scheduler. Expires overdue offers and cascades each job once. */
+  /**
+   * Jobs that nobody could take at the time, tried again.
+   *
+   * offerNext() is only ever called when something happens: a job is created,
+   * an offer expires, a dispatcher presses a button. Nothing ever asked again
+   * on its own. So a job created at midnight, when every rider was off duty,
+   * stayed at CREATED for ever — and a job whose cascade ran out of eligible
+   * riders stayed at UNFULFILLED for ever — with no screen explaining why and
+   * no event to wait for.
+   *
+   * Seen on order #87712: three jobs, one of which was never offered to anyone
+   * because the only rider on duty was 14.78 km from that pickup and outside
+   * the radius. Had they ridden closer an hour later, nothing would have
+   * noticed. The rider toggled duty and signed in and out looking for work
+   * that was sitting right there.
+   *
+   * Safe to run on a timer because offerNext() already refuses to act twice:
+   * it returns null when a live offer exists, never re-offers to a rider who
+   * declined, and respects the cascade depth. So this is "ask again", not
+   * "ask harder" — nobody gets pestered.
+   *
+   * Bounded by age. A job nobody has taken in a day is not waiting for a
+   * timer, it is waiting for a human, and retrying it for ever would hide
+   * that rather than surface it.
+   */
+  async retryStranded(maxAgeHours = 24): Promise<number> {
+    const since = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+
+    const stranded = await this.prisma.job.findMany({
+      where: {
+        status: { in: [JobStatus.CREATED, JobStatus.UNFULFILLED] },
+        createdAt: { gte: since },
+        // Nothing live in front of a rider right now.
+        offers: { none: { status: OfferStatus.OFFERED, expiresAt: { gt: new Date() } } },
+      },
+      select: { id: true },
+      take: 50,
+    });
+
+    let offered = 0;
+    for (const job of stranded) {
+      try {
+        if (await this.offerNext(job.id, 'retry-sweep')) offered += 1;
+      } catch {
+        // One unofferable job must not stop the others. The next sweep tries
+        // again, and a job that keeps failing ages out of the window.
+      }
+    }
+    return offered;
+  }
+
   async expireOverdueOffers(): Promise<number> {
     const overdue = await this.prisma.jobOffer.findMany({
       where: { status: OfferStatus.OFFERED, expiresAt: { lt: new Date() } },
