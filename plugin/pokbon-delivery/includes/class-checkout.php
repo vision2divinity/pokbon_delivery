@@ -350,16 +350,33 @@ class Pokbon_Delivery_Checkout {
 			$vendors = [ 0 => true ];
 		}
 
-		$zones = [];
+		/*
+		 * One leg per VENDOR, even when two of them share an address.
+		 *
+		 * This used to key by pickup zone, so two vendors in the same building
+		 * were charged once — while dispatch went on creating a job per vendor
+		 * and paying a rider fee for each. Order #87712 charged for two
+		 * collection points and produced three jobs: that collection point ran
+		 * at zero margin, and nothing said so.
+		 *
+		 * Per vendor is Francis's rule (2026-09-21, reaffirmed 2026-09-23), and
+		 * it is the honest one: two vendors is two parcels, two handovers and
+		 * two jobs to point at when one of them goes missing. The job is the
+		 * unit of accountability, so it has to be the unit of pricing too.
+		 *
+		 * A list, not a set. Two vendors at OLDASHOGMAN appear twice, and the
+		 * quote sums twice — which is the entire point.
+		 */
+		$legs = [];
 		foreach ( array_keys( $vendors ) as $vendor_id ) {
 			$pickup = Pokbon_Delivery_Orders::pickup_zone_for_vendor( $vendor_id );
 			if ( $pickup === '' ) {
 				continue;
 			}
-			$zones[ $pickup ] = true; // One collection per place, not per vendor.
+			$legs[] = $pickup;
 		}
 
-		$memo[ $key ] = array_keys( $zones );
+		$memo[ $key ] = $legs;
 		return $memo[ $key ];
 	}
 

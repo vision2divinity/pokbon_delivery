@@ -50,8 +50,9 @@ const distanceBands = [{ maxKm: 2000, riderFeeMinor: 15000, buyerPriceMinor: 200
 // Product 101 and 103 belong to vendor 7, product 102 to vendor 9.
 // Vendor 0 is the store's own default collection point, which is what the real
 // pickup_zone_for_vendor() falls back to when a vendor has set no address.
-const productVendors = { 101: 7, 102: 9, 103: 7 };
-const vendorPickups = { 0: 'SHOP', 7: 'SHOP', 9: 'SHOP2' };
+// Vendor 11 shares SHOP with vendor 7 — two businesses, one building.
+const productVendors = { 101: 7, 102: 9, 103: 7, 104: 11 };
+const vendorPickups = { 0: 'SHOP', 7: 'SHOP', 9: 'SHOP2', 11: 'SHOP' };
 
 const cases = [
   // 1. The website's two-argument call, on a request with no cart.
@@ -77,6 +78,8 @@ const cases = [
   // 11. No basket: the default collection point answers, so the app can show
   //     a browsable list before anyone has a cart.
   { ask: 'price', zone: 'JAMESTOWN', productIds: [] },
+  // 12. Two vendors sharing ONE address. Still two legs.
+  { ask: 'price', zone: 'JAMESTOWN', productIds: [101, 104] },
 ];
 
 const run = spawnSync('php', [join(here, 'checkout-zones-php.php')], {
@@ -172,6 +175,16 @@ check('a deactivated zone leaves the caller\'s own price alone', () => {
 
 check('no basket still prices, from the default collection point', () => {
   assert.equal(got[10], 25);
+});
+
+check('two vendors at the SAME address are two legs, not one', () => {
+  // The rule Francis set on 2026-09-21 and reaffirmed on 2026-09-23: two
+  // vendors is two collections however close they are. This used to key by
+  // pickup zone and charge once, while dispatch created a job per vendor and
+  // paid a rider fee for each — so a shared building silently ran at zero
+  // margin. Order #87712 charged for two collection points and made three
+  // jobs before anybody noticed.
+  assert.equal(got[11], got[6] * 2);
 });
 
 if (failures > 0) {

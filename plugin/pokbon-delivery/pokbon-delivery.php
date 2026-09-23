@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.14
+ * Version:           0.5.15
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,19 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.15 (2026-09-23) — two vendors is two legs, and the fee is shared out:
+ *   Checkout charged per COLLECTION POINT while dispatch created a job per
+ *   VENDOR, so two vendors in one building were charged once and paid for
+ *   twice. That collection point ran at zero margin and nothing said so. Per
+ *   vendor is the rule; checkout now follows it.
+ *   And buyerPrice was the whole order's delivery fee written to EVERY job.
+ *   Order #87712 collected GH¢4, recorded GH¢12 across three jobs, and would
+ *   have reported a GH¢9 margin on a delivery that made GH¢1 — the same
+ *   overstated-revenue bug as #87619, surviving its own fix because the fix
+ *   only ever considered one job. Each leg now takes its share in proportion
+ *   to its matrix price, in minor units, with the last taking the remainder so
+ *   the parts equal the whole to the pesewa.
+ *   scripts/check-fee-split.mjs holds it there.
  * 0.5.14 (2026-09-23) — read the vendor's store pin from where WCFM keeps it:
  *   0.5.13 reported that vendors had no map pin. They do — their own store page
  *   draws a map of it. We were reading the user-meta keys _wcfmmp_lat /

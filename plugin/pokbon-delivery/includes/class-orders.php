@@ -144,6 +144,39 @@ class Pokbon_Delivery_Orders {
 
 		$is_cod = self::is_pay_on_delivery( $order );
 
+		/*
+		 * Share the delivery fee out across the legs, before writing any of it.
+		 *
+		 * buyerPrice used to be $order->get_shipping_total() — the WHOLE order's
+		 * delivery fee — written to every job. On a one-vendor order that is
+		 * exactly right. On order #87712, with three vendors, three jobs each
+		 * claimed the full GH¢4: GH¢12 of revenue recorded against GH¢4
+		 * collected, and a reported margin of GH¢9 on a delivery that actually
+		 * made GH¢1.
+		 *
+		 * That is #87619 again — the same overstated-revenue bug the comment
+		 * further down warns about — surviving its own fix because the fix only
+		 * ever considered one job.
+		 *
+		 * Split in proportion to each leg's matrix price, in minor units, with
+		 * the last leg taking the remainder so the parts add up to the whole
+		 * exactly. Proportional rather than equal because the legs are not
+		 * equal: a Kumasi leg and a Circle leg on one order should not each
+		 * claim half the fee. And it survives a discount or free shipping,
+		 * where the total collected bears no relation to the matrix at all.
+		 */
+		$legs = [];
+		foreach ( self::vendors_for( $order ) as $leg_vendor => $leg_items ) {
+			$leg_pickup = self::resolve_pickup( $leg_vendor, $order );
+			if ( $leg_pickup === null ) {
+				continue;
+			}
+			$leg_price = Pokbon_Delivery_Settings::price( $leg_pickup['pickup']['zoneCode'], $dropoff['zoneCode'] );
+			$legs[ $leg_vendor ] = $leg_price === null ? 0 : (int) $leg_price['buyerPriceMinor'];
+		}
+		$charged_all = self::is_local_delivery( $order ) ? Pokbon_Delivery_Settings::to_minor( (float) $order->get_shipping_total() ) : 0;
+		$leg_share   = self::split_fee( $charged_all, $legs );
+
 		foreach ( self::vendors_for( $order ) as $vendor_id => $items ) {
 			$found = self::resolve_pickup( $vendor_id, $order );
 			if ( $found === null ) {
@@ -224,9 +257,10 @@ class Pokbon_Delivery_Orders {
 			 * cost POKBON chose to absorb.
 			 */
 			$price = Pokbon_Delivery_Settings::price( $pickup['zoneCode'], $dropoff['zoneCode'] );
-			$kind  = Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() );
 
-			$charged = $kind === 'local' ? (float) $order->get_shipping_total() : 0.0;
+			// This leg's share of what the customer actually paid — not the
+			// whole order's fee, which is what every job used to claim.
+			$charged = Pokbon_Delivery_Settings::from_minor( $leg_share[ $vendor_id ] ?? 0 );
 
 			if ( $price !== null ) {
 				$payload['pricing'] = [
@@ -480,6 +514,60 @@ class Pokbon_Delivery_Orders {
 					$order->add_order_note( '[POKBON Delivery] The delivery had already finished, so nothing was changed.' );
 			}
 		}
+	}
+
+	/**
+	 * Does the shipping line on this order pay for a rider leg at all?
+	 *
+	 * Freight and store pickup do not. Their shipping line is air or sea
+	 * freight, or nothing, and counting it as delivery revenue would flatter
+	 * every one of those orders. Those jobs carry zero, which is the truth —
+	 * the rider leg was a cost POKBON chose to absorb.
+	 */
+	private static function is_local_delivery( $order ): bool {
+		return Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() ) === 'local';
+	}
+
+	/**
+	 * Divide what was collected between the legs, losing nothing.
+	 *
+	 * Pure, and the arithmetic matters more than it looks: these are the
+	 * numbers the reconciliation screen adds up, so the parts must equal the
+	 * whole to the pesewa. Integer minor units throughout, and the last leg
+	 * takes the remainder rather than every leg rounding independently and the
+	 * total drifting away from the amount actually taken from the customer.
+	 *
+	 * Weights are each leg's matrix price. When they are all zero — nothing
+	 * priced, so nothing to weight by — it falls back to an even split, which
+	 * is at least conserving and obviously arbitrary rather than subtly wrong.
+	 *
+	 * @param int   $total   Collected, in minor units.
+	 * @param array $weights vendor id => matrix price in minor units.
+	 * @return array vendor id => share in minor units.
+	 */
+	public static function split_fee( int $total, array $weights ): array {
+		$out = [];
+		if ( $weights === [] ) {
+			return $out;
+		}
+
+		$sum  = array_sum( $weights );
+		$keys = array_keys( $weights );
+		$last = array_pop( $keys );
+
+		$assigned = 0;
+		foreach ( $keys as $vendor_id ) {
+			$share = $sum > 0
+				? (int) floor( $total * ( $weights[ $vendor_id ] / $sum ) )
+				: intdiv( $total, count( $weights ) );
+			$out[ $vendor_id ] = $share;
+			$assigned         += $share;
+		}
+
+		// Whatever is left, so the parts add up to exactly what was charged.
+		$out[ $last ] = $total - $assigned;
+
+		return $out;
 	}
 
 	/**
