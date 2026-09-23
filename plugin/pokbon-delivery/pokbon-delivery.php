@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.13
+ * Version:           0.5.14
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,14 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.14 (2026-09-23) — read the vendor's store pin from where WCFM keeps it:
+ *   0.5.13 reported that vendors had no map pin. They do — their own store page
+ *   draws a map of it. We were reading the user-meta keys _wcfmmp_lat /
+ *   _wcfm_lat, and WCFM writes the pin into its profile settings array as
+ *   store_lat / store_lng. So a vendor who had completed store setup properly
+ *   still looked to us like one with no location, and their parcels were
+ *   collected from the owner's shop. Every known home for that pin is now
+ *   checked, with a filter for marketplaces that keep it somewhere else.
  * 0.5.13 (2026-09-23) — the rider is sent to the right place, or told plainly:
  *   Two silent fallbacks, both of which produced a plausible wrong answer,
  *   which is why neither had ever been noticed.

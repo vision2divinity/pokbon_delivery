@@ -883,14 +883,23 @@ class Pokbon_Delivery_Orders {
 			$phone = (string) get_user_meta( $vendor_id, '_wcfmmp_phone', true );
 		}
 
-		$lat = (float) get_user_meta( $vendor_id, '_wcfmmp_lat', true );
-		if ( $lat === 0.0 ) {
-			$lat = (float) get_user_meta( $vendor_id, '_wcfm_lat', true );
-		}
-		$lng = (float) get_user_meta( $vendor_id, '_wcfmmp_lng', true );
-		if ( $lng === 0.0 ) {
-			$lng = (float) get_user_meta( $vendor_id, '_wcfm_lng', true );
-		}
+		/*
+		 * Where WCFM actually keeps the store pin.
+		 *
+		 * This used to read the user-meta keys `_wcfmmp_lat` / `_wcfm_lat`
+		 * only, and found nothing — so vendors who HAD dropped a pin during
+		 * store setup, and whose Store Location map renders correctly on their
+		 * own shop page, looked to us like vendors with no coordinates at all.
+		 * They then failed validate_pickup() and their parcels were collected
+		 * from the default point, which is the owner's shop.
+		 *
+		 * WCFM writes the pin into the profile settings array as store_lat /
+		 * store_lng. Older builds and some themes use other spellings, and the
+		 * user-meta keys do exist on some installs, so every known home is
+		 * checked rather than betting on one. Cheap: the profile array has
+		 * already been read above.
+		 */
+		[ $lat, $lng ] = self::store_coordinates( $vendor_id, is_array( $profile ) ? $profile : [] );
 
 		$store_name = (string) get_user_meta( $vendor_id, 'store_name', true );
 		if ( $store_name === '' ) {
@@ -904,6 +913,53 @@ class Pokbon_Delivery_Orders {
 			'contactName'  => $store_name,
 			'contactPhone' => $phone,
 		];
+	}
+
+	/**
+	 * A vendor's store pin, from wherever this WCFM install keeps it.
+	 *
+	 * Returns [0.0, 0.0] when there genuinely is none, which validate_pickup()
+	 * reads as "no pin". The point of looking in several places is that the
+	 * alternative — concluding a vendor has no location when their own store
+	 * page is drawing a map of it — sends a rider to the wrong business and
+	 * tells the owner to go and fix data that was never missing.
+	 *
+	 * @return array{0:float,1:float}
+	 */
+	private static function store_coordinates( int $vendor_id, array $profile ): array {
+		$pairs = [
+			// WCFM Marketplace, current: the store setup wizard writes here.
+			[ $profile['store_lat'] ?? null, $profile['store_lng'] ?? null ],
+			// Some builds nest it with the rest of the address.
+			[ $profile['address']['lat'] ?? null, $profile['address']['lng'] ?? null ],
+			[ $profile['geolocation']['lat'] ?? null, $profile['geolocation']['lng'] ?? null ],
+			// Historic user-meta keys, kept because installs that have them
+			// are exactly the installs that upgraded from those versions.
+			[ get_user_meta( $vendor_id, '_wcfmmp_store_lat', true ), get_user_meta( $vendor_id, '_wcfmmp_store_lng', true ) ],
+			[ get_user_meta( $vendor_id, '_wcfmmp_lat', true ), get_user_meta( $vendor_id, '_wcfmmp_lng', true ) ],
+			[ get_user_meta( $vendor_id, '_wcfm_lat', true ), get_user_meta( $vendor_id, '_wcfm_lng', true ) ],
+			[ get_user_meta( $vendor_id, 'store_lat', true ), get_user_meta( $vendor_id, 'store_lng', true ) ],
+		];
+
+		foreach ( $pairs as $pair ) {
+			$lat = is_scalar( $pair[0] ) ? (float) $pair[0] : 0.0;
+			$lng = is_scalar( $pair[1] ) ? (float) $pair[1] : 0.0;
+			// Null island is what an empty string casts to, not a place.
+			if ( abs( $lat ) >= 0.0001 || abs( $lng ) >= 0.0001 ) {
+				return [ $lat, $lng ];
+			}
+		}
+
+		/**
+		 * Last resort for a marketplace whose vendor data lives somewhere else
+		 * entirely. Return [lat, lng]; anything else is ignored.
+		 */
+		$filtered = apply_filters( 'pokbon_delivery_vendor_coordinates', null, $vendor_id, $profile );
+		if ( is_array( $filtered ) && count( $filtered ) === 2 ) {
+			return [ (float) $filtered[0], (float) $filtered[1] ];
+		}
+
+		return [ 0.0, 0.0 ];
 	}
 
 	/**
