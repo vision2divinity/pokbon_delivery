@@ -108,6 +108,22 @@ export class PluginJobsController {
     return { offered: Boolean(offer), offer };
   }
 
+  /**
+   * The order behind this job was cancelled. The API decides what that means:
+   * called off before collection, recalled for return after it.
+   */
+  @PluginAuth()
+  @Post('jobs/:id/recall')
+  @HttpCode(HttpStatus.OK)
+  async recall(@Param('id') id: string, @Body() body: unknown) {
+    const parsed = cancelJobSchema.extend({ actor: cancelJobSchema.shape.reason.optional() }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => i.message));
+    const { job, outcome } = await this.jobs.recallForOrderCancellation(id, parsed.data.reason, parsed.data.actor ?? 'marketplace');
+    // The outcome matters to the caller: "recalled" means a rider is still
+    // holding goods that now have to come back, which is not a closed job.
+    return { outcome, job: toAdminJobView(job) };
+  }
+
   /** Dispatcher closes a failed job: the goods are back with the sender. */
   @PluginAuth()
   @Post('jobs/:id/returned')

@@ -583,6 +583,73 @@ export class JobsService {
   }
 
   /**
+   * The order behind this job has been called off. Work out what that means.
+   *
+   * The marketplace can cancel an order at any moment — a customer asks, a
+   * vendor runs out, somebody in the office decides. Until now nothing told
+   * the delivery service, so a rider carried on riding to a customer for an
+   * order that no longer existed, and the first anyone knew was a doorstep
+   * conversation.
+   *
+   * The decision is here rather than in the plugin because it depends on the
+   * lifecycle, and the lifecycle lives here:
+   *
+   *   - before a rider has the goods, the job is simply called off;
+   *   - once a rider is carrying the parcel, it cannot be. Where a parcel
+   *     physically is cannot be undone by a status change, so the job fails
+   *     with ORDER_CANCELLED and the rider's screen tells them to take it
+   *     back — the same failed-then-returned path a refused delivery uses,
+   *     which keeps the goods accounted for;
+   *   - a job that has already finished is left alone.
+   *
+   * A rider who had accepted the job is credited the failed-trip uplift either
+   * way. They rode somewhere for a delivery that was called off by somebody
+   * else, which is precisely the situation that uplift exists for. A
+   * dispatcher calling off a job they created by mistake does NOT go through
+   * here, so that case is unchanged.
+   */
+  async recallForOrderCancellation(jobId: string, reason: string, actor: string): Promise<{ job: Job; outcome: 'cancelled' | 'recalled' | 'ignored' }> {
+    const job = await this.mustFind(jobId);
+
+    if (!canTransition(job.status as JobStatus, JobStatus.CANCELLED) && !canTransition(job.status as JobStatus, JobStatus.FAILED)) {
+      // Delivered, returned, already cancelled. Nothing to undo.
+      return { job, outcome: 'ignored' };
+    }
+
+    const carrying = !canTransition(job.status as JobStatus, JobStatus.CANCELLED);
+    const accepted = job.riderId !== null;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.jobOffer.updateMany({
+        where: { jobId, status: OfferStatus.OFFERED },
+        data: { status: OfferStatus.WITHDRAWN, respondedAt: new Date() },
+      });
+
+      if (accepted && job.source === JobSource.MARKETPLACE && job.riderSource === RiderSource.POKBON && job.riderId) {
+        const uplift = applyMarkup(job.riderFeeMinor, this.settings.get('failed_trip_uplift')) - job.riderFeeMinor;
+        if (uplift > 0) {
+          await tx.rider.update({ where: { id: job.riderId }, data: { pendingUpliftMinor: { increment: uplift } } });
+        }
+      }
+
+      if (carrying) {
+        const updated = await this.transition(tx, job, JobStatus.FAILED, `plugin:${actor}`, {
+          data: { failedAt: new Date(), failureReason: FailureReason.ORDER_CANCELLED, failureDetail: reason },
+          detail: { reason, recalled: true, byOrderCancellation: true },
+          callbackExtra: { failureReason: FailureReason.ORDER_CANCELLED },
+        });
+        return { job: updated, outcome: 'recalled' as const };
+      }
+
+      const updated = await this.transition(tx, job, JobStatus.CANCELLED, `plugin:${actor}`, {
+        data: { cancelReason: reason, cancelledBy: actor, cancelledAt: new Date() },
+        detail: { reason, byOrderCancellation: true },
+      });
+      return { job: updated, outcome: 'cancelled' as const };
+    });
+  }
+
+  /**
    * Goods are back with the vendor or sender, recorded by a dispatcher.
    *
    * The rider's own returned() needs the rider: it proves who carried the

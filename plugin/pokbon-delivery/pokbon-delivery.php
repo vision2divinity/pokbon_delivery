@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.11
+ * Version:           0.5.12
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,23 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.12 (2026-09-23) — cancelling an order now stops the rider:
+ *   The marketplace could cancel an order at any moment and nothing told the
+ *   delivery service, so the rider carried on riding and the first anyone knew
+ *   was a conversation at somebody's door about an order that no longer
+ *   existed. Cancelling now recalls the delivery.
+ *   What that means is decided by the delivery service, because it depends on
+ *   where the parcel is: called off outright while the goods are still with
+ *   the vendor; recalled for return once a rider is carrying it, which fails
+ *   the job as ORDER_CANCELLED so their screen tells them to take it back; and
+ *   left alone once it has finished. Each writes an order note, because a
+ *   recalled parcel is still out there until somebody receives it.
+ *   A rider who had already accepted is credited the failed-trip uplift. They
+ *   rode somewhere for a delivery somebody else called off, which is what that
+ *   uplift is for.
+ *   A cancelled order also stays cancelled: the recall fails the job, the job
+ *   calls back, and a shop with a status set for failed deliveries would
+ *   otherwise find cancelling an order quietly moved it somewhere else.
  * 0.5.11 (2026-09-23) — a dispatcher can close a delivery that cannot finish:
  *   The handlers for cancelling, assigning and bypassing the code had all been
  *   written and the job screen rendered a button for almost none of them, so a

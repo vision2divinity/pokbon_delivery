@@ -181,6 +181,14 @@ export const FailureReason = {
   PAYMENT_FAILED: 'PAYMENT_FAILED',
   VENDOR_NOT_READY: 'VENDOR_NOT_READY',
   RIDER_INCIDENT: 'RIDER_INCIDENT',
+  /*
+   * Set by the system, never chosen by a rider — which is why it is absent
+   * from the app's reason list. The buyer (or the shop) called the order off
+   * while the parcel was already in a rider's hands, so the delivery has not
+   * failed in any sense the rider is answerable for: it has been recalled, and
+   * the goods have to go back.
+   */
+  ORDER_CANCELLED: 'ORDER_CANCELLED',
   OTHER: 'OTHER',
 } as const;
 export type FailureReason = (typeof FailureReason)[keyof typeof FailureReason];

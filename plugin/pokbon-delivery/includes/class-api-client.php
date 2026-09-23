@@ -103,6 +103,20 @@ class Pokbon_Delivery_API_Client {
 		return self::post( '/jobs', $payload, self::TIMEOUT_ORDER_PATH );
 	}
 
+	/**
+	 * Tell the delivery service an order has been called off.
+	 *
+	 * Deliberately not cancel_job(): what a cancellation means depends on where
+	 * the parcel is, and only the delivery service knows that. It answers with
+	 * an outcome — cancelled, recalled, or ignored.
+	 */
+	public static function recall_job( string $job_id, string $reason, string $actor ) {
+		return self::post( '/jobs/' . rawurlencode( $job_id ) . '/recall', [
+			'reason' => $reason,
+			'actor'  => $actor,
+		] );
+	}
+
 	/** Close a failed job from the office: the goods are back with the sender. */
 	public static function return_job( string $job_id, string $reason, string $actor ) {
 		return self::post( '/jobs/' . rawurlencode( $job_id ) . '/returned', [

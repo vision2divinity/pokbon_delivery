@@ -40,6 +40,16 @@ class Pokbon_Delivery_Orders {
 
 	public static function bootstrap(): void {
 		add_action( 'woocommerce_order_status_processing', [ self::class, 'on_processing' ], 20, 1 );
+		/*
+		 * An order that is called off must not leave a rider riding to it.
+		 *
+		 * Until this existed the marketplace could cancel an order — a customer
+		 * asks, a vendor runs out, somebody in the office decides — and nothing
+		 * told the delivery service. The rider carried on, and the first anyone
+		 * knew was a conversation at somebody's door about an order that no
+		 * longer existed.
+		 */
+		add_action( 'woocommerce_order_status_cancelled', [ self::class, 'on_cancelled' ], 20, 1 );
 	}
 
 	/**
@@ -385,6 +395,71 @@ class Pokbon_Delivery_Orders {
 	}
 
 	/**
+	 * The order was called off. Tell the delivery service, and say what happened.
+	 *
+	 * The plugin does not decide the outcome — it cannot, because the answer
+	 * depends on where the parcel is, and the delivery service is the only
+	 * thing that knows. It reports back one of three:
+	 *
+	 *   cancelled  nobody had collected it yet; the job is simply off.
+	 *   recalled   a rider is carrying the goods. The job is failed with
+	 *              ORDER_CANCELLED, their screen now tells them to bring it
+	 *              back, and the parcel is still out there until they do.
+	 *   ignored    already delivered, returned or cancelled.
+	 *
+	 * Each writes an order note, because "recalled" in particular is not a
+	 * closed matter: somebody has to receive a parcel that is still moving, and
+	 * an order that quietly went quiet is how stock goes missing.
+	 */
+	public static function on_cancelled( $order_id ): void {
+		if ( ! Pokbon_Delivery_API_Client::is_configured() || ! function_exists( 'wc_get_order' ) ) {
+			return;
+		}
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return;
+		}
+
+		$job_ids = self::job_ids_for( $order );
+		if ( $job_ids === [] ) {
+			return; // Never dispatched. Nothing to recall.
+		}
+
+		$actor  = is_user_logged_in() ? wp_get_current_user()->user_login : 'marketplace';
+		$reason = sprintf( 'Order #%s was cancelled.', $order->get_order_number() );
+
+		foreach ( $job_ids as $job_id ) {
+			$result = Pokbon_Delivery_API_Client::recall_job( $job_id, $reason, $actor );
+
+			if ( is_wp_error( $result ) ) {
+				// Loud, because the alternative is a rider still on their way
+				// and nobody aware of it.
+				$order->add_order_note( sprintf(
+					'[POKBON Delivery] Could not call off the delivery (%s). A rider may still be on the way — check the job and stop it by hand.',
+					$result->get_error_message()
+				) );
+				Pokbon_Delivery_Audit::log( 'delivery.recall_failed', [
+					'order_id' => (int) $order->get_id(),
+					'job_id'   => $job_id,
+					'error'    => $result->get_error_message(),
+				] );
+				continue;
+			}
+
+			switch ( (string) ( $result['outcome'] ?? '' ) ) {
+				case 'recalled':
+					$order->add_order_note( '[POKBON Delivery] The rider had already collected this. They have been told to take it back to the sender — the parcel is still out until they confirm it has been returned.' );
+					break;
+				case 'cancelled':
+					$order->add_order_note( '[POKBON Delivery] Delivery called off. Nobody had collected the goods.' );
+					break;
+				default:
+					$order->add_order_note( '[POKBON Delivery] The delivery had already finished, so nothing was changed.' );
+			}
+		}
+	}
+
+	/**
 	 * Which setting decides the order status for a given job status.
 	 *
 	 * A table rather than a chain of ifs, because this is a mapping and the
@@ -436,6 +511,19 @@ class Pokbon_Delivery_Orders {
 
 		$key = self::ORDER_STATUS_SETTINGS[ $status ] ?? null;
 		if ( $key === null ) {
+			return;
+		}
+
+		/*
+		 * A cancelled order stays cancelled.
+		 *
+		 * Cancelling an order recalls the delivery, which fails the job, which
+		 * calls back here — and a shop that had set a status for failed
+		 * deliveries would find its cancelled order quietly moved somewhere
+		 * else by the very act of cancelling it. The order has already been
+		 * decided by a human; the delivery is reporting, not deciding.
+		 */
+		if ( $order->has_status( 'cancelled' ) ) {
 			return;
 		}
 
