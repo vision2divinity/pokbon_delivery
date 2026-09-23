@@ -23,6 +23,7 @@ import { Button, Card, Field, H2, Notice, P, PaidBanner, Row, Screen } from '../
 import { ApiError, jobs as jobsApi, RiderJob } from '../../lib/api';
 import { config, copy, feature, money } from '../../lib/config';
 import { useTheme } from '../../lib/theme';
+import { capturePhoto, PhotoPayload } from '../../lib/photo';
 
 const FAILURE_REASONS = [
   ['NOBODY_HOME', 'Nobody home'],
@@ -32,6 +33,19 @@ const FAILURE_REASONS = [
   ['REFUSED_DAMAGED', 'Refused — damaged'],
   ['OTHER', 'Something else'],
 ] as const;
+
+type FailureReasonValue = (typeof FAILURE_REASONS)[number][0];
+
+/*
+ * The server has always required a photo here and returns 400 without one, so
+ * this is not a new rule — it is the same rule, said before the rider submits
+ * instead of after. Damage is a claim against a vendor or a customer, and the
+ * only moment it can be evidenced is while the rider is still holding the box.
+ */
+const PHOTO_REQUIRED: readonly FailureReasonValue[] = ['REFUSED_DAMAGED'];
+
+/* "Something else" is only useful if the rider can say what else. */
+const NOTE_REQUIRED: readonly FailureReasonValue[] = ['OTHER'];
 
 export default function JobScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,6 +57,19 @@ export default function JobScreen() {
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState('');
   const [showFail, setShowFail] = useState(false);
+  /*
+   * The failure form is a form, not a menu.
+   *
+   * Tapping a reason used to submit immediately, which is why "Refused —
+   * damaged" was unreportable: it went straight to a server that demands a
+   * photo, and came back 400 with nothing on screen able to take one. The
+   * rider could neither deliver nor fail, which is the one state the lifecycle
+   * has no way out of.
+   */
+  const [failReason, setFailReason] = useState<FailureReasonValue | null>(null);
+  const [failNote, setFailNote] = useState('');
+  const [failPhoto, setFailPhoto] = useState<PhotoPayload | null>(null);
+  const [failError, setFailError] = useState('');
   /*
    * Starts as the number on the order, and can be changed.
    *
@@ -88,11 +115,22 @@ export default function JobScreen() {
     return () => clearInterval(t);
   }, [job?.status, load]);
 
-  const run = async (fn: () => Promise<RiderJob>) => {
+  /**
+   * Returns whether it worked.
+   *
+   * It swallows the error on purpose — the message belongs on the screen, not
+   * in a crash — but a caller that then tidies up needs to know. The failure
+   * form clears itself on success, and a silent `true` there would have thrown
+   * away the photo a rider had just taken and the note they had just typed,
+   * at a doorstep, on the bad connection that caused the failure. Callers that
+   * do not care can carry on ignoring this.
+   */
+  const run = async (fn: () => Promise<RiderJob>): Promise<boolean> => {
     setBusy(true);
     setError('');
     try {
       setJob(await fn());
+      return true;
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 0
@@ -101,6 +139,7 @@ export default function JobScreen() {
             ? e.message
             : copy('errors', 'generic'),
       );
+      return false;
     } finally {
       setBusy(false);
     }
@@ -393,18 +432,115 @@ export default function JobScreen() {
         showFail ? (
           <Card>
             <H2>{copy('complete', 'failed')}</H2>
+
             {FAILURE_REASONS.map(([value, label]) => (
               <Button
                 key={value}
-                title={label}
-                kind="secondary"
+                title={failReason === value ? `✓  ${label}` : label}
+                kind={failReason === value ? 'primary' : 'secondary'}
                 onPress={() => {
-                  setShowFail(false);
-                  void run(() => jobsApi.failed(job.id, value));
+                  setFailReason(value);
+                  setFailError('');
+                  // A photo taken for "damaged" is not evidence for "nobody
+                  // home". Changing the reason clears what was gathered for
+                  // the old one rather than quietly attaching it to the new.
+                  if (!PHOTO_REQUIRED.includes(value)) setFailPhoto(null);
                 }}
               />
             ))}
-            <Button title="Never mind" kind="ghost" onPress={() => setShowFail(false)} />
+
+            {failReason ? (
+              <View style={{ gap: space.sm, marginTop: space.sm }}>
+                <P>
+                  {NOTE_REQUIRED.includes(failReason)
+                    ? 'What happened? This goes to the dispatcher.'
+                    : 'Anything to add? (optional)'}
+                </P>
+                <TextInput
+                  style={[input, { minHeight: 80, textAlignVertical: 'top' }]}
+                  value={failNote}
+                  onChangeText={(v) => {
+                    setFailNote(v);
+                    setFailError('');
+                  }}
+                  placeholder="In your own words"
+                  placeholderTextColor={c.textLight}
+                  multiline
+                  maxLength={500}
+                  editable={!busy}
+                />
+
+                {PHOTO_REQUIRED.includes(failReason) ? (
+                  <Notice tone="warning">
+                    A photo is required when goods come back damaged. It is the only record of what
+                    the box looked like while you still had it.
+                  </Notice>
+                ) : null}
+
+                <Button
+                  title={failPhoto ? 'Photo attached — retake' : 'Take a photo'}
+                  kind="secondary"
+                  disabled={busy}
+                  onPress={async () => {
+                    const shot = await capturePhoto('FAILURE');
+                    if (shot.ok) {
+                      setFailPhoto(shot.photo);
+                      setFailError('');
+                    } else if (shot.reason !== 'cancelled') {
+                      setFailError(shot.message);
+                    }
+                  }}
+                />
+
+                {failError ? <Notice tone="error">{failError}</Notice> : null}
+
+                <Button
+                  title="Report it"
+                  busy={busy}
+                  onPress={() => {
+                    // Checked here so the rider is told before they submit,
+                    // rather than by a 400 that loses what they typed.
+                    if (PHOTO_REQUIRED.includes(failReason) && !failPhoto) {
+                      setFailError('Take a photo of the damage before reporting this.');
+                      return;
+                    }
+                    if (NOTE_REQUIRED.includes(failReason) && failNote.trim() === '') {
+                      setFailError('Say what happened, so the dispatcher can act on it.');
+                      return;
+                    }
+                    void run(() =>
+                      jobsApi.failed(
+                        job.id,
+                        failReason,
+                        failNote.trim() === '' ? undefined : failNote.trim(),
+                        failPhoto ?? undefined,
+                      ),
+                    ).then((ok) => {
+                      // Only on success. A failed submit keeps the photo and
+                      // the note exactly where they were, so the rider retries
+                      // rather than re-gathers.
+                      if (!ok) return;
+                      setShowFail(false);
+                      setFailReason(null);
+                      setFailNote('');
+                      setFailPhoto(null);
+                    });
+                  }}
+                />
+              </View>
+            ) : null}
+
+            <Button
+              title="Never mind"
+              kind="ghost"
+              onPress={() => {
+                setShowFail(false);
+                setFailReason(null);
+                setFailNote('');
+                setFailPhoto(null);
+                setFailError('');
+              }}
+            />
           </Card>
         ) : (
           <Button title={copy('complete', 'failed')} kind="ghost" onPress={() => setShowFail(true)} />

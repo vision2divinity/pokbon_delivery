@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.8
+ * Version:           0.5.9
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,14 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.9 (2026-09-23) — a rider who cannot deliver can now say why, with proof:
+ *   The API has always stored a failure reason, a note and a photo, and has
+ *   always REQUIRED a photo when goods come back damaged. None of it was ever
+ *   shown here, so a rider photographing a damaged box was sending it into a
+ *   screen nobody could read. The job detail now leads with what went wrong:
+ *   the reason, the rider's own words, and the photographs, above the route and
+ *   the money, because a dispatcher opening a failed job is opening it for
+ *   exactly that.
  * 0.5.8 (2026-09-23) — the customer's order moves while the delivery moves:
  *   0.5.x moved the order when the delivery FINISHED, which fixed "still
  *   ongoing after I signed for it" and left a quieter version behind: the

@@ -271,6 +271,64 @@ $live_statuses = 'CREATED,OFFERED,UNFULFILLED,ASSIGNED,AT_PICKUP,PICKED_UP,EN_RO
 				<span class="description">— <?php echo esc_html( $job['status'] ?? '' ); ?></span>
 			</h2>
 
+			<?php
+			/*
+			 * What went wrong, and the proof, first.
+			 *
+			 * The rider app could always pick a reason and the API has always
+			 * stored one, along with a note and a photo — and none of it was
+			 * ever shown here. So a rider who photographed a damaged box at
+			 * somebody's door was sending it into a screen nobody could read,
+			 * which is indistinguishable from not asking for it at all.
+			 *
+			 * Above the table rather than inside it: a dispatcher opening a
+			 * failed job is opening it for this, and should not have to scroll
+			 * past the route and the money to find out why.
+			 */
+			$failure_reason = (string) ( $job['failureReason'] ?? '' );
+			$failure_detail = (string) ( $job['failureDetail'] ?? '' );
+			$photos         = is_array( $job['photos'] ?? null ) ? $job['photos'] : [];
+			$failure_photos = array_values( array_filter( $photos, static function ( $p ) {
+				return strtoupper( (string) ( $p['kind'] ?? '' ) ) === 'FAILURE';
+			} ) );
+			?>
+			<?php if ( $failure_reason !== '' || $failure_detail !== '' || $failure_photos ) : ?>
+				<div class="notice notice-warning inline" style="max-width:60em;padding:1em">
+					<h3 style="margin-top:0">Reported as not delivered</h3>
+					<?php if ( $failure_reason !== '' ) : ?>
+						<p style="font-size:1.1em;margin:0 0 .5em">
+							<strong><?php echo esc_html( ucfirst( strtolower( str_replace( '_', ' ', $failure_reason ) ) ) ); ?></strong>
+						</p>
+					<?php endif; ?>
+					<?php if ( $failure_detail !== '' ) : ?>
+						<p style="margin:0 0 .5em"><em>&ldquo;<?php echo esc_html( $failure_detail ); ?>&rdquo;</em>
+							<span class="description">&mdash; the rider&rsquo;s own words</span></p>
+					<?php endif; ?>
+					<?php if ( $failure_photos ) : ?>
+						<p style="margin:0">
+							<?php foreach ( $failure_photos as $photo ) :
+								$url = (string) ( $photo['url'] ?? '' );
+								if ( $url === '' ) { continue; }
+								// Absolute already, or relative to the API.
+								if ( ! preg_match( '#^https?://#i', $url ) ) {
+									$url = rtrim( Pokbon_Delivery_Settings::api_base_url(), '/' ) . '/' . ltrim( $url, '/' );
+								}
+								?>
+								<a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener">
+									<img src="<?php echo esc_url( $url ); ?>" alt="Photo taken by the rider"
+										style="max-height:170px;border-radius:6px;margin-right:.5em;vertical-align:top">
+								</a>
+							<?php endforeach; ?>
+						</p>
+						<p class="description" style="margin:.5em 0 0">
+							Taken by the rider at the time. Click to open full size.
+						</p>
+					<?php elseif ( $failure_reason !== '' ) : ?>
+						<p class="description" style="margin:0">No photo was attached.</p>
+					<?php endif; ?>
+				</div>
+			<?php endif; ?>
+
 			<table class="widefat striped" style="max-width:60em">
 				<tr>
 					<th style="width:14em">Route</th>
