@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.9
+ * Version:           0.5.10
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,20 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.10 (2026-09-23) — the web area list follows the region, and you can say
+ *   where you do not go:
+ *   The website rendered one region's areas — whichever the page loaded with —
+ *   and nothing re-ran when the buyer changed region, so choosing Ho still
+ *   offered Accra's environs at Accra's prices, on a form that looked entirely
+ *   normal. The mobile app was right all along because it holds every area and
+ *   filters on the device. pokbon_delivery_zone_areas_by_region now answers for
+ *   every region in one pass, with the pickup zones resolved once instead of
+ *   per region.
+ *   New setting, off by default: tell a buyer plainly when POKBON does not
+ *   deliver to their region yet, instead of pricing it at the flat regional
+ *   rate. It is the one setting here that can lose a sale, so it is nobody's
+ *   default — but once the zones are real it is the honest option, because
+ *   charging for a delivery no rider can perform costs more than the order.
  * 0.5.9 (2026-09-23) — a rider who cannot deliver can now say why, with proof:
  *   The API has always stored a failure reason, a note and a photo, and has
  *   always REQUIRED a photo when goods come back damaged. None of it was ever

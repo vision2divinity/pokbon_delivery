@@ -144,6 +144,28 @@ $last_sync  = Pokbon_Delivery_Settings::last_sync();
 			</td>
 		</tr>
 		<tr>
+			<th scope="row">Areas you do not serve</th>
+			<td>
+				<label>
+					<input name="require_delivery_coverage" type="checkbox" value="1"
+						<?php checked( ! empty( $settings['require_delivery_coverage'] ) ); ?>>
+					Tell the buyer when POKBON does not deliver to their region yet
+				</label>
+				<p class="description" style="max-width:56em">
+					Off, a region with no delivery areas is priced at your flat regional rate, as it
+					always has been &mdash; you take the order and work out the delivery afterwards.
+					On, the buyer is told plainly that POKBON does not deliver there yet and is asked
+					to choose somewhere else.
+					<br><br>
+					<strong>This is the one setting here that can lose you a sale</strong>, which is why
+					it is off until you turn it on. It is also the honest option once your zones are
+					real: charging somebody for a delivery no rider can perform costs more than the
+					order was worth. Turn it on when the areas you actually serve are all in the
+					matrix.
+				</p>
+			</td>
+		</tr>
+		<tr>
 			<th scope="row">While a delivery is running</th>
 			<td>
 				<?php

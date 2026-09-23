@@ -51,6 +51,15 @@ class Pokbon_Delivery_Checkout {
 		 */
 		add_filter( 'pokbon_delivery_zone_areas', [ self::class, 'zones_for_region' ], 10, 3 );
 		add_filter( 'pokbon_delivery_zone_price', [ self::class, 'filter_zone_price' ], 10, 3 );
+
+		/*
+		 * Every region at once, and whether an unserved region should be
+		 * refused. The checkout renders its area list server-side and then
+		 * cannot change it when the buyer changes region — so it needs all of
+		 * them up front, not one region's worth.
+		 */
+		add_filter( 'pokbon_delivery_zone_areas_by_region', [ self::class, 'areas_by_region' ], 10, 3 );
+		add_filter( 'pokbon_delivery_coverage_required', [ self::class, 'coverage_required' ] );
 	}
 
 	/**
@@ -99,6 +108,81 @@ class Pokbon_Delivery_Checkout {
 		);
 
 		return $out;
+	}
+
+	/**
+	 * Every region's areas in one pass.
+	 *
+	 * The web checkout renders its area list server-side, which meant the list
+	 * was correct for the region the page loaded with and stayed that way:
+	 * choosing Ho still showed Accra's environs, because nothing re-ran the
+	 * filter. The mobile app was right all along — it holds every area and
+	 * filters on the device.
+	 *
+	 * Asking region by region would have priced the same basket sixteen times.
+	 * The pickup zones are resolved once here and reused, which is the
+	 * expensive half.
+	 *
+	 * @param array $regions WooCommerce state codes the site sells to.
+	 * @return array<string,array> region code => priced areas, regions with
+	 *                             none included as empty so the caller can
+	 *                             tell "nothing here" from "never asked".
+	 */
+	public static function areas_by_region( array $out, array $regions, $product_ids = null ): array {
+		$pickups = self::pickup_zones_for( $product_ids );
+		$zones   = Pokbon_Delivery_Settings::active_zones();
+
+		foreach ( $regions as $region_code ) {
+			$region_code = strtoupper( trim( (string) $region_code ) );
+			if ( $region_code === '' ) {
+				continue;
+			}
+
+			$rows = [];
+			foreach ( $zones as $zone ) {
+				if ( ! self::region_matches( (string) ( $zone['region'] ?? '' ), $region_code ) ) {
+					continue;
+				}
+				$price = self::quote( $zone, $pickups );
+				if ( $price === null ) {
+					continue;
+				}
+				$rows[] = [
+					'code'   => (string) $zone['code'],
+					'name'   => (string) $zone['name'],
+					'amount' => $price,
+				];
+			}
+
+			usort(
+				$rows,
+				static function ( $a, $b ) {
+					return $a['amount'] <=> $b['amount'] ?: strcmp( $a['name'], $b['name'] );
+				}
+			);
+
+			$out[ $region_code ] = $rows;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Should a region POKBON does not serve be refused outright?
+	 *
+	 * Off by default, and that default matters. Everything else in this file
+	 * falls back rather than blocking, on the rule that turning area pricing on
+	 * must never make an address unsellable. This setting deliberately breaks
+	 * that rule, so it has to be switched on by somebody who means it — turning
+	 * it on by default would start refusing orders a shop is currently taking,
+	 * without anybody asking for that.
+	 *
+	 * On, the buyer is told plainly that POKBON does not deliver there yet,
+	 * which is kinder than charging a regional rate for a delivery no rider can
+	 * perform.
+	 */
+	public static function coverage_required( $current = false ): bool {
+		return (bool) Pokbon_Delivery_Settings::get( 'require_delivery_coverage' );
 	}
 
 	/**
@@ -223,6 +307,15 @@ class Pokbon_Delivery_Checkout {
 	 * collection.
 	 */
 	private static function pickup_zones_for( $product_ids ): array {
+		// Resolved once per request per basket. areas_by_region() asks for
+		// every region in one go, and without this each region would re-read
+		// the cart and re-resolve every vendor's collection point.
+		static $memo = [];
+		$key = is_array( $product_ids ) ? implode( ',', $product_ids ) : '__cart__';
+		if ( isset( $memo[ $key ] ) ) {
+			return $memo[ $key ];
+		}
+
 		$ids = null;
 
 		if ( is_array( $product_ids ) ) {
@@ -266,7 +359,8 @@ class Pokbon_Delivery_Checkout {
 			$zones[ $pickup ] = true; // One collection per place, not per vendor.
 		}
 
-		return array_keys( $zones );
+		$memo[ $key ] = array_keys( $zones );
+		return $memo[ $key ];
 	}
 
 	/** Product ids in the session cart, or null when there is no cart. */

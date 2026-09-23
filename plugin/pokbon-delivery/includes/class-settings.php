@@ -133,6 +133,16 @@ class Pokbon_Delivery_Settings {
 			 * the order alone, so a default that does not apply is harmless
 			 * rather than fatal. Empty means "leave my orders alone".
 			 */
+			/*
+			 * Refuse an address POKBON cannot reach, instead of pricing it.
+			 *
+			 * Off by default on purpose. Everything else about area pricing
+			 * falls back rather than blocking, so that switching it on can
+			 * never make an address unsellable. This deliberately breaks that
+			 * rule, so it has to be chosen by somebody who means it: on by
+			 * default would start refusing orders a shop is currently taking.
+			 */
+			'require_delivery_coverage' => false,
 			'order_status_on_assigned'  => 'ready-to-ship',
 			'order_status_on_picked_up' => 'in-transit',
 			'order_status_on_delivered' => 'auto',
