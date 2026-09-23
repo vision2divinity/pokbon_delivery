@@ -165,6 +165,7 @@ export class JobsService {
           dropoffZoneCode: toZoneCode,
           dropoffGhanaPost: input.dropoff.ghanaPost ?? null,
           dropoffNote: input.dropoff.note ?? null,
+          dropoffPinned: input.dropoff.pinned,
           dropoffContactName: input.dropoff.contactName,
           dropoffContactPhone: input.dropoff.contactPhone,
           parcelSize: input.parcel.sizeClass,
@@ -223,9 +224,32 @@ export class JobsService {
         where: { jobId, status: OfferStatus.OFFERED },
         data: { status: OfferStatus.WITHDRAWN, respondedAt: new Date() },
       });
-      const updated = await this.transition(tx, job, JobStatus.ASSIGNED, `plugin:${actor}`, {
+
+      /*
+       * Moving a job off a rider who already has it.
+       *
+       * ASSIGNED -> ASSIGNED is not a legal transition, deliberately: a job
+       * should not silently change hands. But a rider who accepted and then
+       * went unreachable is an ordinary Tuesday, and until now a dispatcher
+       * could only cancel the job and rebuild it.
+       *
+       * So it goes back through OFFERED, which IS legal from ASSIGNED, and
+       * then on to the new rider. Two real transitions rather than one
+       * illegal one: the job is taken back, then given out, and the event log
+       * shows both — which is exactly what happened, and what somebody
+       * reading it later needs to see.
+       */
+      let current = job;
+      if (job.status === JobStatus.ASSIGNED && job.riderId !== riderId) {
+        current = await this.transition(tx, job, JobStatus.OFFERED, `plugin:${actor}`, {
+          data: { riderId: null },
+          detail: { takenBackFrom: job.riderId, reason: 'reassigned by a dispatcher' },
+        });
+      }
+
+      const updated = await this.transition(tx, current, JobStatus.ASSIGNED, `plugin:${actor}`, {
         data: { riderId, manualAssignedBy: actor, assignedAt: new Date() },
-        detail: { riderId, manual: true },
+        detail: { riderId, manual: true, reassigned: current.id !== job.id || job.status === JobStatus.ASSIGNED },
       });
       await this.notifyAssigned(tx, updated);
       return updated;

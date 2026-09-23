@@ -131,6 +131,19 @@ export const createJobSchema = z.object({
     zoneCode: z.string().max(40).optional(),
     ghanaPost: z.string().max(40).optional(),
     note: z.string().max(500).optional(),
+    /*
+     * Are these coordinates the buyer's actual doorstep, or a stand-in?
+     *
+     * An order with no map pin — which is every website order today — is sent
+     * with the CENTRE OF THE CHOSEN ZONE as its coordinates, because the job
+     * has to be priced and routed against something. That is defensible for
+     * pricing and dangerous for navigation: tapping Navigate drove riders to
+     * the middle of Madina rather than to the customer.
+     *
+     * Defaults true so an older plugin, which sends real pins and nothing
+     * else, keeps behaving exactly as it does now.
+     */
+    pinned: z.boolean().default(true),
     ...contact.shape,
   }),
   parcel: z.object({

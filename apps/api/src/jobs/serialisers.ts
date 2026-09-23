@@ -21,8 +21,15 @@ function allowedActionsFor(status: string) {
   return {
     /** Put it in front of a rider, or the next one. */
     offer: canTransition(from, JobStatus.OFFERED),
-    /** Hand it to a named rider. */
-    assign: canTransition(from, JobStatus.ASSIGNED),
+    /**
+     * Hand it to a named rider — including one who already has a rider.
+     *
+     * ASSIGNED -> ASSIGNED is not legal, and stays that way. assignManually()
+     * takes an assigned job back through OFFERED first, which is legal, so a
+     * dispatcher can move a job off a rider who has gone unreachable without
+     * cancelling and rebuilding it.
+     */
+    assign: canTransition(from, JobStatus.ASSIGNED) || from === JobStatus.ASSIGNED,
     /** Call it off. Only before the goods are in a rider's hands. */
     cancel: canTransition(from, JobStatus.CANCELLED),
     /** Goods are back with the vendor or sender. Closes a failed job. */
@@ -63,6 +70,8 @@ export function toRiderJobView(job: Job, extras: { photos?: JobPhoto[] } = {}) {
       zoneCode: job.dropoffZoneCode,
       ghanaPost: job.dropoffGhanaPost,
       note: job.dropoffNote,
+      /** False: lat/lng are a zone centre. Navigate by address, not by point. */
+      pinned: job.dropoffPinned,
       contactName: job.dropoffContactName,
       contactPhone: job.dropoffContactPhone,
     },

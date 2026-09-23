@@ -47,6 +47,42 @@ const PHOTO_REQUIRED: readonly FailureReasonValue[] = ['REFUSED_DAMAGED'];
 /* "Something else" is only useful if the rider can say what else. */
 const NOTE_REQUIRED: readonly FailureReasonValue[] = ['OTHER'];
 
+/**
+ * Where "Navigate" should actually take the rider.
+ *
+ * It used to open the coordinates, always. But an order with no map pin — which
+ * is every website order — is created with the CENTRE OF THE CHOSEN ZONE as its
+ * coordinates, because the job still has to be priced and routed against
+ * something. So tapping Navigate drove riders confidently to the middle of
+ * Madina and left them there. Worse than no button: a wrong answer delivered
+ * with the same certainty as a right one.
+ *
+ * With a real pin, navigate to the point — nothing beats it. Without one,
+ * search for the address instead, which is what a person would type, and put
+ * the GhanaPostGPS code first when there is one because it is the most precise
+ * thing on a Ghanaian order.
+ */
+function navigationUrl(dropoff: RiderJob['dropoff']): string {
+  const pinned = (dropoff as { pinned?: boolean }).pinned !== false;
+  if (pinned) {
+    return `geo:${dropoff.lat},${dropoff.lng}?q=${dropoff.lat},${dropoff.lng}`;
+  }
+
+  const ghanaPost = (dropoff as { ghanaPost?: string | null }).ghanaPost ?? '';
+  const query = [ghanaPost, dropoff.address].map((p) => (p ?? '').trim()).filter(Boolean).join(', ');
+
+  // Fall back to the zone centre only when there is no address at all to
+  // search for — at that point an approximate area genuinely is the best
+  // information anyone has.
+  if (query === '') {
+    return `geo:${dropoff.lat},${dropoff.lng}?q=${dropoff.lat},${dropoff.lng}`;
+  }
+
+  // geo:0,0?q=<text> is the documented way to ask the maps app to search
+  // rather than drop a pin, and every Android maps app honours it.
+  return `geo:0,0?q=${encodeURIComponent(query)}`;
+}
+
 export default function JobScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { c, radius, space } = useTheme();
@@ -225,9 +261,7 @@ export default function JobScreen() {
             <Button
               title="Navigate"
               kind="secondary"
-              onPress={() =>
-                void Linking.openURL(`geo:${job.dropoff.lat},${job.dropoff.lng}?q=${job.dropoff.lat},${job.dropoff.lng}`)
-              }
+              onPress={() => void Linking.openURL(navigationUrl(job.dropoff))}
             />
           </View>
         </Row>

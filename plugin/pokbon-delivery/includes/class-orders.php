@@ -145,10 +145,33 @@ class Pokbon_Delivery_Orders {
 		$is_cod = self::is_pay_on_delivery( $order );
 
 		foreach ( self::vendors_for( $order ) as $vendor_id => $items ) {
-			$pickup = self::pickup_for( $vendor_id, $order );
-			if ( $pickup === null ) {
+			$found = self::resolve_pickup( $vendor_id, $order );
+			if ( $found === null ) {
 				$skipped[] = sprintf( 'Vendor %s has no pickup location set.', $vendor_id );
 				continue;
+			}
+			$pickup = $found['pickup'];
+
+			/*
+			 * Say it out loud when a vendor's parcel is being collected from
+			 * somewhere that is not theirs. Dispatch still happens — refusing
+			 * would strand the order — but a human gets the chance to correct
+			 * the pickup before anybody rides anywhere.
+			 */
+			if ( $found['source'] === 'default' && $vendor_id > 0 ) {
+				$vendor    = get_userdata( $vendor_id );
+				$who       = $vendor ? ( get_user_meta( $vendor_id, 'store_name', true ) ?: $vendor->display_name ) : ( 'vendor ' . $vendor_id );
+				$warning   = sprintf(
+					'[POKBON Delivery] The rider is being sent to your DEFAULT collection point for %s, because %s. Check the pickup before the rider sets off, and fix it on their store profile so this stops happening.',
+					$who,
+					$found['why']
+				);
+				$order->add_order_note( $warning );
+				Pokbon_Delivery_Audit::log( 'delivery.pickup_fell_back', [
+					'order_id'  => $order_id,
+					'vendor_id' => $vendor_id,
+					'why'       => $found['why'],
+				] );
 			}
 
 			$payload = [
@@ -667,6 +690,9 @@ class Pokbon_Delivery_Orders {
 			'zoneCode'     => $zone,
 			'ghanaPost'    => (string) $order->get_meta( self::META_GHANAPOST ),
 			'note'         => $note,
+			// False means the coordinates above are the zone centre, not the
+			// buyer's door. The rider app navigates by address instead.
+			'pinned'       => $has_pin,
 			'contactName'  => $name,
 			'contactPhone' => $phone,
 		];
@@ -703,21 +729,79 @@ class Pokbon_Delivery_Orders {
 	}
 
 	private static function pickup_for( $vendor_id, $order ): ?array {
+		$found = self::resolve_pickup( $vendor_id, $order );
+		return $found === null ? null : $found['pickup'];
+	}
+
+	/**
+	 * Where a rider collects, and — just as importantly — how we decided.
+	 *
+	 * The rungs have not changed. What has changed is that the answer now
+	 * carries which one produced it, because the failure this had was silent
+	 * by construction.
+	 *
+	 * validate_pickup() rejects a candidate with no map pin, a pin outside
+	 * every zone, or no usable phone. A vendor with a perfectly good street
+	 * address but no coordinates fails all the same, falls through every rung,
+	 * and lands on the default collection point — which is the owner's own
+	 * shop. The rider is then sent to a real address with a real phone number
+	 * belonging to entirely the wrong business, and nothing anywhere says so.
+	 * Observed 2026-09-23 on a prepaid order for a second vendor.
+	 *
+	 * A fallback that produces an obviously broken answer gets fixed the first
+	 * time it fires. This one produces a plausible answer, so it survives.
+	 *
+	 * @return array{pickup:array,source:string,why:string}|null
+	 */
+	private static function resolve_pickup( $vendor_id, $order ): ?array {
 		$vendor_id = (int) $vendor_id;
 
-		foreach ( [
-			apply_filters( 'pokbon_delivery_vendor_pickup', null, $vendor_id, $order ),
-			self::vendor_store_pickup( $vendor_id ),
-			self::pickup_point_for_vendor( $vendor_id ),
-			self::default_pickup(),
-		] as $candidate ) {
+		$rungs = [
+			'filter'       => apply_filters( 'pokbon_delivery_vendor_pickup', null, $vendor_id, $order ),
+			'vendor_store' => self::vendor_store_pickup( $vendor_id ),
+			'pickup_point' => self::pickup_point_for_vendor( $vendor_id ),
+			'default'      => self::default_pickup(),
+		];
+
+		foreach ( $rungs as $source => $candidate ) {
 			$resolved = self::validate_pickup( $candidate );
 			if ( $resolved !== null ) {
-				return $resolved;
+				return [
+					'pickup' => $resolved,
+					'source' => $source,
+					'why'    => $source === 'default' ? self::why_no_vendor_pickup( $rungs['vendor_store'] ) : '',
+				];
 			}
 		}
 
 		return null;
+	}
+
+	/**
+	 * Why this vendor's own collection point could not be used, in words.
+	 *
+	 * The point of naming it is that every cause is something somebody can go
+	 * and fix in a couple of minutes — but only if they are told which one it
+	 * is. "No pickup location" sends people looking at the wrong screen.
+	 */
+	private static function why_no_vendor_pickup( $candidate ): string {
+		if ( ! is_array( $candidate ) ) {
+			return 'this vendor has no store profile at all';
+		}
+
+		$lat = (float) ( $candidate['lat'] ?? 0 );
+		$lng = (float) ( $candidate['lng'] ?? 0 );
+		if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
+			return 'their store has no map pin, so a rider cannot be routed to it';
+		}
+		if ( Pokbon_Delivery_Geo::resolve_zone_code( $lat, $lng ) === '' ) {
+			return 'their store sits outside every delivery zone you have set up';
+		}
+		if ( Pokbon_Delivery_Messages::normalise_ghana_phone( (string) ( $candidate['contactPhone'] ?? '' ) ) === '' ) {
+			return 'their store has no usable Ghana phone number for the rider to call';
+		}
+
+		return 'their store details could not be used';
 	}
 
 	/**

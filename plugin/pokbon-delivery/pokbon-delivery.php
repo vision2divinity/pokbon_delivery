@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.12
+ * Version:           0.5.13
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,25 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.13 (2026-09-23) — the rider is sent to the right place, or told plainly:
+ *   Two silent fallbacks, both of which produced a plausible wrong answer,
+ *   which is why neither had ever been noticed.
+ *   COLLECTION. A vendor whose store has no map pin, sits outside every zone,
+ *   or has no usable Ghana phone number fails validation and falls through to
+ *   the DEFAULT collection point — the owner's own shop. The rider was sent to
+ *   a real address with a real phone belonging to entirely the wrong business.
+ *   Dispatch still happens, since refusing would strand the order, but the
+ *   order now carries a note naming the vendor and saying exactly which of the
+ *   three things is missing, so somebody can fix it in two minutes.
+ *   DELIVERY. An order with no map pin — every website order — is created with
+ *   the CENTRE OF THE CHOSEN ZONE as its coordinates, because the job must be
+ *   priced against something. The rider app navigated to that point, driving
+ *   riders to the middle of a suburb. Jobs now record whether the coordinates
+ *   are a real pin, and the app searches by GhanaPost code and address instead
+ *   when they are not.
+ *   Reassignment: a dispatcher can move a job off a rider who has gone
+ *   unreachable. It goes back through OFFERED, which is a legal transition,
+ *   rather than weakening the rule that a job cannot silently change hands.
  * 0.5.12 (2026-09-23) — cancelling an order now stops the rider:
  *   The marketplace could cancel an order at any moment and nothing told the
  *   delivery service, so the rider carried on riding and the first anyone knew
