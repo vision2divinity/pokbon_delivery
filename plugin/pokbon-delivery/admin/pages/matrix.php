@@ -106,11 +106,26 @@ $tried    = ( $try_from && $try_to )
 							name="buyer[<?php echo esc_attr( $pair ); ?>]"
 							value="<?php echo esc_attr( $buyer ); ?>" placeholder="buyer">
 						<br>
+						<?php if ( $row ) :
+							$on = Pokbon_Delivery_Settings::row_active( $row );
+							?>
+							<label style="display:block;margin-top:2px;font-size:11px"
+								title="Off keeps the price but stops using it, so this route falls through to the band, then to distance.">
+								<input type="hidden" name="active[<?php echo esc_attr( $pair ); ?>]" value="0">
+								<input type="checkbox" name="active[<?php echo esc_attr( $pair ); ?>]" value="1"
+									<?php checked( $on ); ?>>
+								<?php echo $on ? 'on' : 'off'; ?>
+							</label>
+						<?php endif; ?>
 						<small class="description">
 							<?php
-							echo $row
-								? esc_html( Pokbon_Delivery_Settings::format( $row['buyerPriceMinor'] - $row['riderFeeMinor'] ) )
-								: 'falls through';
+							if ( ! $row ) {
+								echo 'falls through';
+							} elseif ( ! Pokbon_Delivery_Settings::row_active( $row ) ) {
+								echo '<em>not in use</em>';
+							} else {
+								echo esc_html( Pokbon_Delivery_Settings::format( $row['buyerPriceMinor'] - $row['riderFeeMinor'] ) );
+							}
 							?>
 						</small>
 					</td>
@@ -186,6 +201,17 @@ $tried    = ( $try_from && $try_to )
 							<input type="number" step="0.01" min="0" style="width:6em;margin-top:4px"
 								name="bbuyer[<?php echo esc_attr( $pair ); ?>]"
 								value="<?php echo esc_attr( $buyer ); ?>" placeholder="buyer">
+							<?php if ( $row ) :
+								$on = Pokbon_Delivery_Settings::row_active( $row );
+								?>
+								<label style="display:block;margin-top:2px;font-size:11px"
+									title="Off keeps the price but stops using it, so these bands fall through to distance.">
+									<input type="hidden" name="bactive[<?php echo esc_attr( $pair ); ?>]" value="0">
+									<input type="checkbox" name="bactive[<?php echo esc_attr( $pair ); ?>]" value="1"
+										<?php checked( $on ); ?>>
+									<?php echo $on ? 'on' : 'off'; ?>
+								</label>
+							<?php endif; ?>
 						</td>
 					<?php endforeach; ?>
 				</tr>
@@ -208,12 +234,13 @@ $tried    = ( $try_from && $try_to )
 
 	<?php Pokbon_Delivery_Admin::form_open( 'save_distance' ); ?>
 	<table class="widefat striped" style="max-width:46em">
-		<thead><tr><th>Up to (km)</th><th>Rider fee</th><th>Buyer pays</th><th>POKBON</th></tr></thead>
+		<thead><tr><th>Up to (km)</th><th>Rider fee</th><th>Buyer pays</th><th>Using it?</th><th>POKBON</th></tr></thead>
 		<tbody>
 		<?php
-		$rows = $distance;
+		// all_ so a switched-off band is still shown and can be switched back on.
+		$rows = Pokbon_Delivery_Settings::all_distance_bands();
 		$rows[] = [ 'maxKm' => '', 'riderFeeMinor' => 0, 'buyerPriceMinor' => 0 ];
-		foreach ( $rows as $band ) :
+		foreach ( $rows as $i => $band ) :
 			$margin = (int) $band['buyerPriceMinor'] - (int) $band['riderFeeMinor'];
 			?>
 			<tr>
@@ -223,8 +250,30 @@ $tried    = ( $try_from && $try_to )
 					value="<?php echo esc_attr( $band['maxKm'] === '' ? '' : number_format( $band['riderFeeMinor'] / 100, 2, '.', '' ) ); ?>"></td>
 				<td><input type="number" step="0.01" min="0" style="width:8em" name="dist_buyer[]"
 					value="<?php echo esc_attr( $band['maxKm'] === '' ? '' : number_format( $band['buyerPriceMinor'] / 100, 2, '.', '' ) ); ?>"></td>
+				<td>
+					<?php if ( $band['maxKm'] !== '' ) : ?>
+						<label title="Off keeps the band but stops using it, so a route this far falls to the next band up.">
+							<?php /* Keyed, not appended: an unkeyed hidden+checkbox pair posts
+							        one value when unticked and two when ticked, so every row
+							        after the first unticked one would take the wrong flag. With
+							        an explicit index the checkbox overwrites the hidden. */ ?>
+							<input type="hidden" name="dist_active[<?php echo (int) $i; ?>]" value="0">
+							<input type="checkbox" name="dist_active[<?php echo (int) $i; ?>]" value="1"
+								<?php checked( Pokbon_Delivery_Settings::row_active( $band ) ); ?>>
+							in use
+						</label>
+					<?php endif; ?>
+				</td>
 				<td class="description">
-					<?php echo $band['maxKm'] === '' ? '' : esc_html( Pokbon_Delivery_Settings::format( $margin ) ); ?>
+					<?php
+					if ( $band['maxKm'] === '' ) {
+						echo '';
+					} elseif ( ! Pokbon_Delivery_Settings::row_active( $band ) ) {
+						echo '<em>not in use</em>';
+					} else {
+						echo esc_html( Pokbon_Delivery_Settings::format( $margin ) );
+					}
+					?>
 				</td>
 			</tr>
 		<?php endforeach; ?>
@@ -232,7 +281,10 @@ $tried    = ( $try_from && $try_to )
 	</table>
 	<p>
 		<button type="submit" class="button button-primary">Save distance bands</button>
-		<span class="description" style="margin-left:1em">Clearing a row's km removes that band.</span>
+		<span class="description" style="margin-left:1em">
+			Clearing a row&rsquo;s km removes that band. Unticking <strong>in use</strong> keeps it but
+			stops pricing from it, so a route that far falls to the next band up.
+		</span>
 	</p>
 	</form>
 

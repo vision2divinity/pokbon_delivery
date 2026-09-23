@@ -318,6 +318,18 @@ class Pokbon_Delivery_Settings {
 		return trim( preg_replace( '/ {2,}/', ' ', $text ) );
 	}
 
+	/**
+	 * A priced route, or null when there is not one to use.
+	 *
+	 * Null is what makes the ladder a ladder: the caller falls through to the
+	 * band, then to distance. A row switched off is therefore not a row
+	 * charging zero — it is a row that steps aside so the next rung answers,
+	 * which is the whole point of being able to switch one off.
+	 *
+	 * Rows saved before this existed have no `active` key at all, so absent
+	 * means on. A missing flag must never quietly disable a price somebody is
+	 * already charging.
+	 */
 	public static function price( string $from, string $to ): ?array {
 		$prices = self::prices();
 		$key    = $from . '|' . $to;
@@ -325,18 +337,56 @@ class Pokbon_Delivery_Settings {
 			return null;
 		}
 		$row = $prices[ $key ];
+		if ( ! self::row_active( $row ) ) {
+			return null;
+		}
 		return [
 			'riderFeeMinor'   => (int) $row['riderFeeMinor'],
 			'buyerPriceMinor' => (int) $row['buyerPriceMinor'],
 		];
 	}
 
+	/** Absent means on, so an older saved row keeps working. */
+	public static function row_active( $row ): bool {
+		return ! is_array( $row ) || ! array_key_exists( 'active', $row ) || ! empty( $row['active'] );
+	}
+
+	/** Switch one zone-pair route on or off. Keeps the amounts. */
+	public static function set_price_active( string $from, string $to, bool $active ): void {
+		$prices = self::prices();
+		$key    = $from . '|' . $to;
+		if ( ! isset( $prices[ $key ] ) ) {
+			return;
+		}
+		$prices[ $key ]['active'] = $active;
+		update_option( self::OPT_PRICES, $prices, false );
+		self::mark_dirty();
+	}
+
+	/** Switch one band-pair route on or off. Keeps the amounts. */
+	public static function set_band_price_active( string $from, string $to, bool $active ): void {
+		$prices = self::band_prices();
+		$key    = $from . '|' . $to;
+		if ( ! isset( $prices[ $key ] ) ) {
+			return;
+		}
+		$prices[ $key ]['active'] = $active;
+		update_option( self::OPT_BAND_PRICES, $prices, false );
+		self::mark_dirty();
+	}
+
 	/** Amounts arrive from the admin form in GHS. */
 	public static function save_price( string $from, string $to, float $rider_fee_ghs, float $buyer_price_ghs ): void {
 		$prices = self::prices();
-		$prices[ $from . '|' . $to ] = [
+		$key    = $from . '|' . $to;
+		// Editing the amounts must not silently switch a disabled route back
+		// on. Somebody correcting a price they have deliberately taken out of
+		// service is doing one thing, not two.
+		$was    = isset( $prices[ $key ] ) ? self::row_active( $prices[ $key ] ) : true;
+		$prices[ $key ] = [
 			'riderFeeMinor'   => self::to_minor( $rider_fee_ghs ),
 			'buyerPriceMinor' => self::to_minor( $buyer_price_ghs ),
+			'active'          => $was,
 		];
 		update_option( self::OPT_PRICES, $prices, false );
 		self::mark_dirty();
@@ -410,7 +460,7 @@ class Pokbon_Delivery_Settings {
 	public static function band_price( string $from, string $to ): ?array {
 		$prices = self::band_prices();
 		$key    = $from . '|' . $to;
-		if ( empty( $prices[ $key ] ) ) {
+		if ( empty( $prices[ $key ] ) || ! self::row_active( $prices[ $key ] ) ) {
 			return null;
 		}
 		return [
@@ -421,9 +471,12 @@ class Pokbon_Delivery_Settings {
 
 	public static function save_band_price( string $from, string $to, float $rider_ghs, float $buyer_ghs ): void {
 		$prices = self::band_prices();
-		$prices[ $from . '|' . $to ] = [
+		$key    = $from . '|' . $to;
+		$was    = isset( $prices[ $key ] ) ? self::row_active( $prices[ $key ] ) : true;
+		$prices[ $key ] = [
 			'riderFeeMinor'   => self::to_minor( $rider_ghs ),
 			'buyerPriceMinor' => self::to_minor( $buyer_ghs ),
+			'active'          => $was,
 		];
 		update_option( self::OPT_BAND_PRICES, $prices, false );
 		self::mark_dirty();
@@ -454,7 +507,19 @@ class Pokbon_Delivery_Settings {
 		];
 	}
 
+	/**
+	 * The distance bands PRICING should use: the live ones.
+	 *
+	 * A band switched off drops out of the ladder entirely, so a route that
+	 * used to land on it falls to the next band up — or off the end, where the
+	 * caller says "we do not serve this route" rather than inventing a fee.
+	 */
 	public static function distance_bands(): array {
+		return array_values( array_filter( self::all_distance_bands(), [ self::class, 'row_active' ] ) );
+	}
+
+	/** Every band including the switched-off ones. For the admin screen. */
+	public static function all_distance_bands(): array {
 		$bands = get_option( self::OPT_DISTANCE, null );
 		return is_array( $bands ) ? $bands : [];
 	}
@@ -470,6 +535,9 @@ class Pokbon_Delivery_Settings {
 				'maxKm'           => $max,
 				'riderFeeMinor'   => self::to_minor( (float) ( $band['riderFee'] ?? 0 ) ),
 				'buyerPriceMinor' => self::to_minor( (float) ( $band['buyerPrice'] ?? 0 ) ),
+				// The form posts this per row, so a band left switched off
+				// survives an edit to any of the others.
+				'active'          => ! array_key_exists( 'active', $band ) || ! empty( $band['active'] ),
 			];
 		}
 		usort( $clean, static function ( $a, $b ) {
@@ -594,7 +662,10 @@ class Pokbon_Delivery_Settings {
 				'toZoneCode'   => $to,
 				'riderFee'     => self::from_minor( (int) $row['riderFeeMinor'] ),
 				'buyerPrice'   => self::from_minor( (int) $row['buyerPriceMinor'] ),
-				'active'       => true,
+				// The real flag, not true. The delivery service already filters
+				// on active when it prices; it was only ever told everything
+				// was on.
+				'active'       => self::row_active( $row ),
 			];
 		}
 
@@ -609,17 +680,20 @@ class Pokbon_Delivery_Settings {
 				'toBand'     => $to,
 				'riderFee'   => self::from_minor( (int) $row['riderFeeMinor'] ),
 				'buyerPrice' => self::from_minor( (int) $row['buyerPriceMinor'] ),
-				'active'     => true,
+				'active'     => self::row_active( $row ),
 			];
 		}
 
 		$distance = [];
-		foreach ( self::distance_bands() as $row ) {
+		// all_ here: a switched-off band must still be SENT, marked off, or the
+		// delivery service would simply never hear about it again and keep
+		// pricing from a stale copy.
+		foreach ( self::all_distance_bands() as $row ) {
 			$distance[] = [
 				'maxKm'      => (float) $row['maxKm'],
 				'riderFee'   => self::from_minor( (int) $row['riderFeeMinor'] ),
 				'buyerPrice' => self::from_minor( (int) $row['buyerPriceMinor'] ),
-				'active'     => true,
+				'active'     => self::row_active( $row ),
 			];
 		}
 

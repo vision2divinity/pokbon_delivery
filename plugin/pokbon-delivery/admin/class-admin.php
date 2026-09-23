@@ -222,6 +222,16 @@ class Pokbon_Delivery_Admin {
 				$cleared = 0;
 				$rider   = (array) ( $_POST['rider'] ?? [] );
 				$buyer   = (array) ( $_POST['buyer'] ?? [] );
+				/*
+				 * On/off per route, applied after the amounts are written.
+				 *
+				 * Off is not zero and not deleted: the price stays, and the
+				 * route falls through to the band and then to distance. That
+				 * is the point of being able to switch one off — you take a
+				 * route out of service for a week without losing what you had
+				 * decided to charge for it.
+				 */
+				$active  = (array) ( $_POST['active'] ?? [] );
 
 				foreach ( $rider as $pair => $rider_raw ) {
 					[ $from, $to ] = array_pad( explode( '|', sanitize_text_field( $pair ) ), 2, '' );
@@ -238,6 +248,11 @@ class Pokbon_Delivery_Admin {
 						$cleared++;
 						continue;
 					}
+
+					// Applied below, once the amounts are saved: save_price()
+					// preserves the existing flag, so setting it afterwards is
+					// what actually moves it.
+					$want_active = ! array_key_exists( $pair, $active ) || ! empty( $active[ $pair ] );
 					if ( $rider_ghs === '' ) {
 						continue;
 					}
@@ -254,6 +269,7 @@ class Pokbon_Delivery_Admin {
 					}
 
 					Pokbon_Delivery_Settings::save_price( $from, $to, $rider_minor / 100, $buyer_minor / 100 );
+					Pokbon_Delivery_Settings::set_price_active( $from, $to, $want_active );
 					$saved++;
 				}
 
@@ -562,6 +578,9 @@ class Pokbon_Delivery_Admin {
 				$cleared = 0;
 				$rider   = (array) ( $_POST['brider'] ?? [] );
 				$buyer   = (array) ( $_POST['bbuyer'] ?? [] );
+				// Off keeps the band price and steps it aside, so the route
+				// falls through to distance.
+				$active  = (array) ( $_POST['bactive'] ?? [] );
 
 				foreach ( $rider as $pair => $rider_raw ) {
 					[ $from, $to ] = array_pad( explode( '|', sanitize_text_field( $pair ) ), 2, '' );
@@ -587,6 +606,11 @@ class Pokbon_Delivery_Admin {
 						: Pokbon_Delivery_Settings::to_minor( (float) $buyer_ghs );
 
 					Pokbon_Delivery_Settings::save_band_price( $from, $to, $rider_minor / 100, $buyer_minor / 100 );
+					Pokbon_Delivery_Settings::set_band_price_active(
+						$from,
+						$to,
+						! array_key_exists( $pair, $active ) || ! empty( $active[ $pair ] )
+					);
 					$saved++;
 				}
 
@@ -602,6 +626,13 @@ class Pokbon_Delivery_Admin {
 				$rider = (array) ( $_POST['dist_rider'] ?? [] );
 				$buyer = (array) ( $_POST['dist_buyer'] ?? [] );
 
+				// Keyed by row index, because the browser omits an unticked
+				// checkbox entirely. An unkeyed array would therefore shift,
+				// and every row after the first unticked one would take its
+				// neighbour's flag — the kind of bug that switches off a price
+				// nobody asked to switch off.
+				$on = (array) ( $_POST['dist_active'] ?? [] );
+
 				$bands = [];
 				foreach ( $max as $i => $km ) {
 					if ( trim( (string) $km ) === '' ) {
@@ -611,6 +642,7 @@ class Pokbon_Delivery_Admin {
 						'maxKm'      => (float) $km,
 						'riderFee'   => (float) ( $rider[ $i ] ?? 0 ),
 						'buyerPrice' => (float) ( $buyer[ $i ] ?? 0 ),
+						'active'     => ! array_key_exists( $i, $on ) || ! empty( $on[ $i ] ),
 					];
 				}
 

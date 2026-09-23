@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.15
+ * Version:           0.5.16
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,19 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.16 (2026-09-23) — routes and bands can be taken out of service:
+ *   Deleting a price already worked — blank both amounts — but there was no way
+ *   to switch one off, so taking a route out of service for a week meant losing
+ *   what you had decided to charge for it.
+ *   Every row on the price matrix, the band matrix and the distance table now
+ *   has an on/off. Off is not zero and not deleted: the row keeps its amounts
+ *   and steps aside, so the route falls through to the band, then to distance,
+ *   exactly as it would if the row had never been written. A disabled distance
+ *   band hands its routes to the next band up.
+ *   The delivery service already filtered on `active` for all three tables and
+ *   was simply never told the truth — the sync sent `true` unconditionally.
+ *   Editing a disabled row's amounts no longer switches it back on: correcting
+ *   a price you have deliberately withdrawn is one act, not two.
  * 0.5.15 (2026-09-23) — two vendors is two legs, and the fee is shared out:
  *   Checkout charged per COLLECTION POINT while dispatch created a job per
  *   VENDOR, so two vendors in one building were charged once and paid for
