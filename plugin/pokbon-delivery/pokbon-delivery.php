@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.18
+ * Version:           0.5.19
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,21 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.19 (2026-09-24) — a job is priced by the whole ladder, not its first rung:
+ *   Job creation asked Settings::price(), which answers only for an explicit
+ *   zone pair somebody typed in by hand — while the Price matrix screen tells
+ *   the owner they need not fill that in, because the band and distance rungs
+ *   cover everything else. So for any route left to rungs 2 or 3 the plugin
+ *   sent no pricing at all, and the delivery service fell back to its own
+ *   quote: the matrix LIST price, recorded as revenue instead of the leg's
+ *   share of what the customer actually paid.
+ *   The same call was weighting the multi-vendor fee split, so every weight was
+ *   zero and the split quietly became equal rather than proportional.
+ *   Both now use Pokbon_Delivery_Pricing::route(), through one helper, because
+ *   two call sites asking the price of the same journey a different way is how
+ *   they came to disagree.
+ *   Latent on a fully populated matrix like POKBON's today; it bites the moment
+ *   a new zone is added without pricing every pair to it.
  * 0.5.18 (2026-09-24) — riders can ask to be paid, and being paid means something:
  *   PAYOUT and ADJUSTMENT had been in the schema since the beginning and nothing
  *   ever wrote one, so the "balance" on every screen — including the rider's —

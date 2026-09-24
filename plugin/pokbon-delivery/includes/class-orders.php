@@ -171,7 +171,11 @@ class Pokbon_Delivery_Orders {
 			if ( $leg_pickup === null ) {
 				continue;
 			}
-			$leg_price = Pokbon_Delivery_Settings::price( $leg_pickup['pickup']['zoneCode'], $dropoff['zoneCode'] );
+			// The whole ladder, not its first rung. Settings::price() answers
+			// only for an explicit zone pair, and most routes are deliberately
+			// left to the band and distance rungs — so weighting by it gave
+			// every leg a weight of zero and the split silently became equal.
+			$leg_price = self::route_price( $leg_pickup['pickup'], $dropoff );
 			$legs[ $leg_vendor ] = $leg_price === null ? 0 : (int) $leg_price['buyerPriceMinor'];
 		}
 		$charged_all = self::is_local_delivery( $order ) ? Pokbon_Delivery_Settings::to_minor( (float) $order->get_shipping_total() ) : 0;
@@ -256,7 +260,24 @@ class Pokbon_Delivery_Orders {
 			 * Those jobs carry zero, which is the truth — the rider leg was a
 			 * cost POKBON chose to absorb.
 			 */
-			$price = Pokbon_Delivery_Settings::price( $pickup['zoneCode'], $dropoff['zoneCode'] );
+			/*
+			 * Priced by the ladder, not by the explicit matrix alone.
+			 *
+			 * This asked Settings::price(), which answers only for a zone pair
+			 * somebody has typed in by hand — and the Price matrix screen tells
+			 * the owner they do not need to fill that in, because the band and
+			 * distance rungs exist to cover everything else. So for most routes
+			 * $price was null, `pricing` was never sent, and the API fell back
+			 * to its own quote: the matrix LIST price, recorded as revenue
+			 * instead of the leg's share of what the customer actually paid.
+			 *
+			 * That is #87619 for the third time. It survived its own fix twice
+			 * because each fix was written against the shape of the case that
+			 * provoked it — first one job, then one rung. The job screen then
+			 * prints "Buyer pays" beside a rung of `band-pair`, which reads as
+			 * corroboration rather than as the warning it is.
+			 */
+			$price = self::route_price( $pickup, $dropoff );
 
 			// This leg's share of what the customer actually paid — not the
 			// whole order's fee, which is what every job used to claim.
@@ -514,6 +535,33 @@ class Pokbon_Delivery_Orders {
 					$order->add_order_note( '[POKBON Delivery] The delivery had already finished, so nothing was changed.' );
 			}
 		}
+	}
+
+	/**
+	 * What this leg is worth, by the full three-rung ladder.
+	 *
+	 * One place, because two call sites asking the price of the same journey a
+	 * different way is how the weights and the recorded revenue came to
+	 * disagree with each other and with checkout.
+	 *
+	 * @param array $pickup  Resolved collection point.
+	 * @param array $dropoff Resolved delivery point.
+	 * @return array|null riderFeeMinor + buyerPriceMinor, or null when nothing
+	 *                    on the ladder can price it.
+	 */
+	private static function route_price( array $pickup, array $dropoff ): ?array {
+		return Pokbon_Delivery_Pricing::route(
+			[
+				'zoneCode' => (string) ( $pickup['zoneCode'] ?? '' ),
+				'lat'      => $pickup['lat'] ?? null,
+				'lng'      => $pickup['lng'] ?? null,
+			],
+			[
+				'zoneCode' => (string) ( $dropoff['zoneCode'] ?? '' ),
+				'lat'      => $dropoff['lat'] ?? null,
+				'lng'      => $dropoff['lng'] ?? null,
+			]
+		);
 	}
 
 	/**
