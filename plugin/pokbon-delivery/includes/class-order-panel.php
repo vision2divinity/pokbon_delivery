@@ -79,6 +79,9 @@ class Pokbon_Delivery_Order_Panel {
 				count( $job_ids ),
 				esc_html( $status ?: 'created' )
 			);
+
+			self::render_doorstep_money( $order, $job_ids );
+
 			printf(
 				'<p><a class="button" href="%s">Open the job board</a></p>',
 				esc_url( admin_url( 'admin.php?page=pokbon-delivery' ) )
@@ -145,6 +148,64 @@ class Pokbon_Delivery_Order_Panel {
 	 * treated as a local delivery, which is the safe default: the worst case
 	 * is a dispatch button offered on an order that did not need one.
 	 */
+	/**
+	 * Who has paid at which door, on an order the buyer settles on arrival.
+	 *
+	 * An order with three deliveries is paid three times, at three different
+	 * moments, and between the first rider and the last it is genuinely
+	 * part-paid. Without this the screen says only "unpaid" while real money
+	 * has already been taken from a real person — which is the state somebody
+	 * rings about, and the state nobody could previously answer.
+	 *
+	 * Silent on an order nobody pays at the door, and silent on a single-leg
+	 * order that has not been collected: neither has anything to explain.
+	 */
+	private static function render_doorstep_money( $order, array $job_ids ): void {
+		if ( ! Pokbon_Delivery_Orders::is_pay_on_delivery( $order ) ) {
+			return;
+		}
+
+		$paid        = Pokbon_Delivery_Payments::legs_paid( $order );
+		$outstanding = Pokbon_Delivery_Payments::outstanding_minor( $order );
+		$collected   = Pokbon_Delivery_Payments::collected_minor( $order );
+
+		if ( $paid === [] && count( $job_ids ) < 2 ) {
+			return;
+		}
+
+		echo '<p style="margin-bottom:.3em"><strong>At the door</strong></p><ul style="margin:0 0 .8em 1.2em;list-style:disc">';
+
+		foreach ( $job_ids as $i => $job_id ) {
+			$due  = Pokbon_Delivery_Payments::leg_amount_minor( $order, $job_id );
+			$done = $paid[ $job_id ] ?? null;
+
+			printf(
+				'<li>Delivery %d &mdash; %s</li>',
+				(int) $i + 1,
+				is_array( $done )
+					? sprintf(
+						'<span style="color:#1a7f37">collected GHS %s</span>',
+						esc_html( number_format( ( (int) ( $done['amountMinor'] ?? 0 ) ) / 100, 2 ) )
+					)
+					: sprintf(
+						'to collect GHS %s',
+						esc_html( number_format( $due / 100, 2 ) )
+					)
+			);
+		}
+
+		echo '</ul>';
+
+		printf(
+			'<p class="description">Collected GHS %s of GHS %s. %s</p>',
+			esc_html( number_format( $collected / 100, 2 ) ),
+			esc_html( number_format( (float) $order->get_total(), 2 ) ),
+			$outstanding > 0
+				? esc_html( sprintf( 'GHS %s is still with the buyer.', number_format( $outstanding / 100, 2 ) ) )
+				: '<strong>Settled in full.</strong>'
+		);
+	}
+
 	public static function classify( string $method ): string {
 		$m = strtolower( $method );
 		if ( strpos( $m, 'abroad' ) !== false || strpos( $m, 'freight' ) !== false ) {

@@ -93,6 +93,7 @@ node scripts/check-message-templates.mjs # both copies fill a template the same
 node scripts/check-checkout-zones.mjs    # the website and the app quote the same price
 node scripts/check-fee-split.mjs         # a delivery fee split between legs still adds up
 node scripts/check-uplift.mjs            # the failed-trip uplift cannot be printed in a loop
+node scripts/check-cod-split.mjs         # the doors add up to the order, and never to more
 ```
 
 Each of these exists because something it now catches reached production.
@@ -408,6 +409,29 @@ Kept with their evidence, so none of this gets re-investigated.
   Now mirrors `WC_Gateway_COD`, last in `create_order()` so the fee is re-priced
   and the area stamped first. Proven end to end on **#87692**, placed from the
   app, cash on delivery, run to Completed with nothing pushed by hand.
+- **Three riders, three prompts, one order** — closed in Delivery 0.5.25.
+  `codAmount` was `$order->get_total()` written to every job, and the doorstep
+  charge in `class-payments.php` raised a Paystack prompt for the whole order
+  whichever leg the rider was on. On a one-vendor order that is exactly right,
+  and every hand-tested order had one vendor. On a three-vendor order the first
+  rider to arrive collected the entire amount before the buyer had seen the
+  other two parcels, and two riders arriving together could both pass the
+  "already paid?" guard and both charge in full.
+  The doorstep payment is now per leg, which is what the buyer experiences: one
+  prompt per parcel, for that vendor's goods plus that leg's delivery.
+  `Orders::cod_split()` divides the order total by goods-plus-delivery and the
+  legs come to exactly the total (`scripts/check-cod-split.mjs`). Each leg
+  carries its own intent (`pkbd_<order>_<n>`), its own Paystack attempts with
+  the amount stored beside each reference, its own prompt allowance and its own
+  settled record; `chargeable_minor()` caps every charge at what the order still
+  owes, so no sequence of retries or re-dispatches can take more than the total.
+  The order is marked paid when the legs add up. The API needed no change — it
+  already stored `paymentIntentId` per job; only this plugin assumed one payment
+  per order. A vendor whose pickup could not be resolved gets no leg and is
+  never collected for, so the buyer is not asked at the door to pay for a parcel
+  nobody fetched. The order panel now shows what has been collected at which
+  door, because between the first rider and the last an order is genuinely
+  part-paid and nothing could previously say so.
 - **The rider was sent to the wrong shop** — closed in Delivery 0.5.23.
   A vendor's address exists in three places (billing details, what they typed at
   registration, a profile somebody filled in for them) and *none of them holds

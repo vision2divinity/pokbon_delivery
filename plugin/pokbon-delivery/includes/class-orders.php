@@ -140,6 +140,7 @@ class Pokbon_Delivery_Orders {
 		$created  = [];
 		$reused   = [];
 		$skipped  = [];
+		$leg_cod  = []; // job id => what to collect at that door, minor units.
 
 		$dropoff = self::dropoff_for( $order );
 		if ( $dropoff === null ) {
@@ -192,6 +193,15 @@ class Pokbon_Delivery_Orders {
 		$charged_all = self::is_local_delivery( $order ) ? Pokbon_Delivery_Settings::to_minor( (float) $order->get_shipping_total() ) : 0;
 		$leg_share   = self::split_fee( $charged_all, $legs );
 
+		// What each rider collects at the door, and what each parcel is worth.
+		// Both used to be the whole order on every leg — see cod_split().
+		$item_money = self::vendor_money( $order );
+		$cod_share  = self::cod_split(
+			Pokbon_Delivery_Settings::to_minor( (float) $order->get_total() ),
+			$item_money,
+			$leg_share
+		);
+
 		foreach ( self::vendors_for( $order ) as $vendor_id => $items ) {
 			$found = self::resolve_pickup( $vendor_id, $order );
 			if ( $found === null ) {
@@ -236,14 +246,24 @@ class Pokbon_Delivery_Orders {
 					// from someone collecting "1 x phone case", and a courier
 					// who cannot see the item before accepting will decline.
 					'description'   => self::parcel_description( $order, $vendor_id ),
-					'declaredValue' => (float) $order->get_total(),
+					// This vendor's goods, not the whole order. A rider
+					// carrying one GH¢20 phone case was being told the parcel
+					// was worth the other two vendors' stock as well, which is
+					// the number they weigh risk and care against.
+					'declaredValue' => Pokbon_Delivery_Settings::from_minor( (int) ( $item_money[ $vendor_id ] ?? 0 ) ),
 					'itemCount'     => max( 1, (int) $items ),
 				],
 				'payment'     => [
 					'method'    => $is_cod ? 'cod' : 'prepaid',
-					// What the buyer approves at the door: the whole order.
-					// The API never shows this to a rider (PRD § 9c).
-					'codAmount' => $is_cod ? (float) $order->get_total() : 0,
+					// What the buyer approves at THIS door: this vendor's goods
+					// plus this leg's delivery. The legs come to exactly the
+					// order total — see cod_split(). It was the whole order on
+					// every leg, so a three-vendor order asked the buyer to pay
+					// for it three times. The API never shows this to a rider
+					// (PRD § 9c).
+					'codAmount' => $is_cod
+						? Pokbon_Delivery_Settings::from_minor( (int) ( $cod_share[ $vendor_id ] ?? 0 ) )
+						: 0,
 					'currency'  => 'GHS',
 				],
 				'buyerUserId' => (string) $order->get_customer_id(),
@@ -330,6 +350,17 @@ class Pokbon_Delivery_Orders {
 
 			$created[] = $job_id;
 
+			/*
+			 * What this rider collects at this door, remembered against the job.
+			 *
+			 * Written here rather than worked out again at the door, because by
+			 * the time the rider arrives the matrix, the shipping total or the
+			 * order itself may have moved — and the buyer was quoted a figure
+			 * when the job was made. It is also the only record that survives a
+			 * re-dispatch, which is what stops one leg being charged twice.
+			 */
+			$leg_cod[ $job_id ] = (int) ( $cod_share[ $vendor_id ] ?? 0 );
+
 			// The delivery service is idempotent per order and vendor, so a
 			// second dispatch can hand back the job that already exists. Say
 			// which happened rather than reporting both as "created".
@@ -348,6 +379,14 @@ class Pokbon_Delivery_Orders {
 
 		if ( ! empty( $created ) ) {
 			$order->update_meta_data( self::META_JOB_IDS, $created );
+			// What each door owes. Merged rather than replaced, so a partial
+			// re-dispatch does not forget a leg that is already out with a
+			// rider — and, worse, re-derive its amount from an order that has
+			// since been paid down.
+			$order->update_meta_data(
+				Pokbon_Delivery_Payments::META_LEG_COD,
+				$leg_cod + ( is_array( $order->get_meta( Pokbon_Delivery_Payments::META_LEG_COD ) ) ? $order->get_meta( Pokbon_Delivery_Payments::META_LEG_COD ) : [] )
+			);
 			// Single-job orders also carry the flat key the payments class and
 			// the contract use.
 			if ( count( $created ) === 1 ) {
@@ -618,6 +657,84 @@ class Pokbon_Delivery_Orders {
 	 */
 	private static function is_local_delivery( $order ): bool {
 		return Pokbon_Delivery_Order_Panel::classify( (string) $order->get_shipping_method() ) === 'local';
+	}
+
+	/**
+	 * What each vendor's goods are worth in this order, in minor units.
+	 *
+	 * Line total after discount, plus that line's tax — what the buyer is
+	 * actually paying for those items. Keyed exactly as vendors_for() keys its
+	 * counts, so the two can be read side by side.
+	 *
+	 * Vendor 0 means "this install has no vendor concept", and takes the whole
+	 * order, mirroring parcel_description().
+	 *
+	 * @return array vendor id => minor units.
+	 */
+	public static function vendor_money( $order ): array {
+		$money = [];
+
+		foreach ( $order->get_items() as $item ) {
+			$product_id = (int) $item->get_product_id();
+			$vendor_id  = (int) apply_filters(
+				'pokbon_delivery_product_vendor',
+				get_post_field( 'post_author', $product_id ),
+				$product_id,
+				$item
+			);
+			$key    = $vendor_id > 0 ? $vendor_id : 0;
+			$amount = (float) $item->get_total() + (float) $item->get_total_tax();
+
+			$money[ $key ] = ( $money[ $key ] ?? 0 ) + Pokbon_Delivery_Settings::to_minor( $amount );
+		}
+
+		return empty( $money )
+			? [ 0 => Pokbon_Delivery_Settings::to_minor( (float) $order->get_total() ) ]
+			: $money;
+	}
+
+	/**
+	 * What each rider collects at the door, on a cash-on-delivery order.
+	 *
+	 * THE BUG THIS EXISTS FOR. Every job carried `codAmount` = the whole
+	 * order's total. On a one-vendor order that is correct and nobody noticed.
+	 * On the three-vendor order that was actually tested, three riders would
+	 * each have asked the buyer to approve the ENTIRE order at their own
+	 * doorstep — three separate MoMo prompts for the full amount, the first of
+	 * which succeeds. A buyer who approves two of them has paid twice for one
+	 * order, at the door, to a courier, with no refund path that does not go
+	 * through a human.
+	 *
+	 * It is the same shape as every other money bug here: a value that is right
+	 * for one leg, written to every leg, correct in testing because testing had
+	 * one leg.
+	 *
+	 * The rule: a rider collects for what that rider is carrying — that
+	 * vendor's goods plus that leg's share of the delivery fee — and the legs
+	 * together come to exactly the order total, never more.
+	 *
+	 * Weighted rather than summed directly, for two reasons:
+	 *
+	 *   - Order-level money (a coupon, a fee, tax rounding) belongs to no
+	 *     vendor. Adding goods and shipping leg by leg would leave that
+	 *     difference uncollected or double-counted. Splitting the real total by
+	 *     those weights conserves it by construction.
+	 *   - A vendor whose pickup could not be resolved gets no job and no
+	 *     shipping share, so their goods are simply never collected for. The
+	 *     buyer is not asked at the door to pay for a parcel nobody fetched.
+	 *
+	 * @param int   $order_total_minor What the buyer owes for the whole order.
+	 * @param array $item_money        vendor id => goods value, minor units.
+	 * @param array $leg_share         vendor id => that leg's delivery share.
+	 * @return array vendor id => amount to collect, minor units.
+	 */
+	public static function cod_split( int $order_total_minor, array $item_money, array $leg_share ): array {
+		$weights = [];
+		foreach ( $item_money as $vendor_id => $minor ) {
+			$weights[ $vendor_id ] = (int) $minor + (int) ( $leg_share[ $vendor_id ] ?? 0 );
+		}
+
+		return self::split_fee( $order_total_minor, $weights );
 	}
 
 	/**
