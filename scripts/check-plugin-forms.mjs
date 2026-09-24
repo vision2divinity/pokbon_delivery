@@ -115,6 +115,52 @@ for (const path of [...new Set(files)]) {
   }
 }
 
+/*
+ * Every page must be reachable.
+ *
+ * The check above walks from the button inwards, so it never noticed the
+ * bigger version of the same mistake: a page file, a working render method,
+ * forms, handlers — and no line in the $pages map in class-admin.php, which is
+ * the only thing that puts a page in the menu. Payouts and Collection points
+ * both shipped that way. Nothing errored. There was simply no way to open
+ * them, and the only symptom was somebody looking for a screen that was not
+ * there.
+ *
+ * Reachable means: required by a render_* method, AND that method named in
+ * $pages. Either half missing is the same outcome.
+ */
+{
+  const adminSrc = await readFile('plugin/pokbon-delivery/admin/class-admin.php', 'utf8');
+
+  // Which render_* method requires which page file.
+  const requiredBy = new Map();
+  for (const m of adminSrc.matchAll(
+    /function\s+(render_[a-z_]+)\s*\([^)]*\)[^{]*\{\s*require[^;]*admin\/pages\/([a-z0-9-]+\.php)/g,
+  )) {
+    requiredBy.set(m[2], m[1]);
+  }
+
+  // Which callbacks the menu map actually lists.
+  const menuBlock = adminSrc.match(/\$pages\s*=\s*\[([\s\S]*?)\n\s*\];/);
+  const inMenu = new Set(
+    menuBlock ? [...menuBlock[1].matchAll(/'(render_[a-z_]+)'/g)].map((m) => m[1]) : [],
+  );
+  if (!menuBlock) problems.push('class-admin.php: could not find the $pages menu map at all');
+
+  for (const name of (await readdir('plugin/pokbon-delivery/admin/pages')).sort()) {
+    if (!name.endsWith('.php')) continue;
+    const callback = requiredBy.get(name);
+    if (!callback) {
+      problems.push(`admin/pages/${name}: no render_* method requires it — the file is never loaded`);
+    } else if (!inMenu.has(callback)) {
+      problems.push(
+        `admin/pages/${name}: ${callback}() exists but is not in the $pages map — ` +
+          `the page has no menu entry, so there is no way to open it`,
+      );
+    }
+  }
+}
+
 if (problems.length) {
   console.error('Admin form problems:\n');
   for (const p of problems) console.error('  ' + p);

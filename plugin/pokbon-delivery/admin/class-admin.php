@@ -35,10 +35,22 @@ class Pokbon_Delivery_Admin {
 			57
 		);
 
+		/*
+		 * Every page has to be listed here to exist.
+		 *
+		 * A page file and a render method are not a page. Payouts and
+		 * Collection points both shipped with a file, a render method, working
+		 * forms and handlers — and no line in this array, so there was no way
+		 * to open either of them. Nothing errored; they simply were not there.
+		 * `scripts/check-plugin-forms.mjs` now fails when a file in
+		 * admin/pages/ is not reachable from this map.
+		 */
 		$pages = [
 			self::SLUG              => [ 'Job board', 'render_jobs' ],
 			self::SLUG . '-riders'  => [ 'Riders', 'render_riders' ],
+			self::SLUG . '-payouts' => [ 'Payouts', 'render_payouts' ],
 			self::SLUG . '-zones'   => [ 'Zones', 'render_zones' ],
+			self::SLUG . '-collection' => [ 'Collection points', 'render_collection_points' ],
 			self::SLUG . '-matrix'  => [ 'Price matrix', 'render_matrix' ],
 			self::SLUG . '-reconciliation' => [ 'Reconciliation', 'render_reconciliation' ],
 			self::SLUG . '-messages' => [ 'Messages', 'render_messages' ],
@@ -984,6 +996,10 @@ class Pokbon_Delivery_Admin {
 
 	public static function render_zones(): void {
 		require POKBON_DELIVERY_DIR . 'admin/pages/zones.php';
+	}
+
+	public static function render_collection_points(): void {
+		require POKBON_DELIVERY_DIR . 'admin/pages/collection-points.php';
 	}
 
 	public static function render_matrix(): void {
