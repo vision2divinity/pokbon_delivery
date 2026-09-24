@@ -355,6 +355,28 @@ export default function RiderHome() {
             {rider?.pendingUplift ? ` · ${money(rider.pendingUplift)} uplift on your next delivery` : ''}
           </P>
 
+          {/*
+            * Being paid has to show on their screen.
+            *
+            * Without this the request simply disappears when it is settled,
+            * and a rider cannot tell "they paid me" from "the app forgot" —
+            * which is the single thing most likely to make somebody stop
+            * riding for you, and the hardest to find out about afterwards.
+            */}
+          {!payout?.openRequest && payout?.lastSettled ? (
+            <Notice tone={payout.lastSettled.status === 'PAID' ? 'success' : 'warning'}>
+              {payout.lastSettled.status === 'PAID'
+                ? `Paid. You asked for ${money(payout.lastSettled.requested)}${
+                    payout.lastSettled.settledAt
+                      ? ` on ${new Date(payout.lastSettled.settledAt).toLocaleDateString()}`
+                      : ''
+                  }.`
+                : `Your last request was declined${
+                    payout.lastSettled.note ? `: ${payout.lastSettled.note}` : '.'
+                  }`}
+            </Notice>
+          ) : null}
+
           {payout?.openRequest ? (
             <Notice tone="info">
               You asked for {money(payout.openRequest.amount)}. POKBON has been told and will pay you.

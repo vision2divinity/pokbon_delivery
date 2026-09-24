@@ -377,13 +377,25 @@ export class RidersService {
    * fastest ways to lose a contractor.
    */
   async payoutStatus(riderId: string) {
-    const [balance, open, last] = await Promise.all([
+    const [balance, open, last, settled] = await Promise.all([
       this.balanceMinor(riderId),
       this.prisma.payoutRequest.findFirst({
         where: { riderId, status: 'REQUESTED' },
         orderBy: { requestedAt: 'desc' },
       }),
       this.prisma.payoutRequest.findFirst({ where: { riderId }, orderBy: { requestedAt: 'desc' } }),
+      /*
+       * The last answer they got, whichever way it went.
+       *
+       * A rider whose request simply vanishes from their screen has no way to
+       * tell "they paid me" from "the app forgot". Being paid is the moment
+       * that decides whether somebody keeps riding for you, so it is the one
+       * thing that must be visible without asking anybody.
+       */
+      this.prisma.payoutRequest.findFirst({
+        where: { riderId, status: { in: ['PAID', 'DECLINED'] } },
+        orderBy: { settledAt: 'desc' },
+      }),
     ]);
 
     const cycleDays = this.payoutCycleDays();
@@ -404,6 +416,19 @@ export class RidersService {
       nextEligibleAt: tooSoon ? nextEligibleAt : null,
       openRequest: open
         ? { id: open.id, amount: fromMinor(open.amountMinor), requestedAt: open.requestedAt }
+        : null,
+      /**
+       * What happened to their last request. The amount is read off the ledger
+       * rather than the request, because the owner may pay part of it and the
+       * rider must see what actually arrived.
+       */
+      lastSettled: settled
+        ? {
+            status: settled.status,
+            requested: fromMinor(settled.amountMinor),
+            settledAt: settled.settledAt,
+            note: settled.ownerNote,
+          }
         : null,
     };
   }

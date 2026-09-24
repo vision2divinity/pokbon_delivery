@@ -331,6 +331,13 @@ export interface PayoutStatus {
   cycle: string;
   nextEligibleAt: string | null;
   openRequest: { id: string; amount: number; requestedAt: string } | null;
+  /** What happened to the last request, so being paid is visible. */
+  lastSettled: {
+    status: 'PAID' | 'DECLINED';
+    requested: number;
+    settledAt: string | null;
+    note: string | null;
+  } | null;
 }
 
 export const rider = {

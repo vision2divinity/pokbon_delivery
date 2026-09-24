@@ -312,6 +312,40 @@ not ask harder.
 Bounded by age on purpose: a job nobody has taken in a day is waiting for a
 human, and retrying it for ever would hide that rather than surface it.
 
+### 15. Rider profile management — agreed 2026-09-24, not scheduled
+
+To be built after the loophole backlog. All of it managed from the plugin.
+
+1. Average delivery speed.
+2. Job acceptance speed — how quickly they answer an offer.
+3. Orders and requests they have had.
+4. Requests they declined.
+5. Requests they accepted.
+6. Total earnings.
+7. Full profile, settings and account management.
+8. Graphs, wherever they help a rider see how they are doing.
+9. Share and invite other riders.
+10. **Extra vehicles and sub-riders.** A rider may own more than one bike, car
+    or truck with colleagues riding them, and wants to onboard those people:
+    they submit the vehicle and the driver's details, POKBON is alerted, the
+    owner approves from the dashboard, and the new person signs in with their
+    own number.
+11. Whatever else comes up.
+
+**Most of 1–6 is already recorded and simply unreachable.** Jobs, offers (with
+`offeredAt` and `respondedAt`, so acceptance speed is a subtraction) and
+`RiderEarning` rows all exist. `rider.earnings()` and `jobs.history()` are in
+the app's API client with **zero call sites**, and `GET /rider/jobs/history` is
+already served. Do 6 and 3–5 first: nearly free, and what a rider actually asks
+about.
+
+Item 10 is the only one needing new modelling — a vehicle belongs to a rider, a
+sub-rider belongs to a vehicle, approval belongs to the owner.
+
+This is retention work. An unexplained balance and an unexplained refusal are
+the two commonest reasons a contractor stops turning up, and they tell other
+riders why.
+
 ### Unresolved, needs one fact
 
 - **An order that reached the job board but never appeared in the rider app.**
