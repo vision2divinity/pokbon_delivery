@@ -70,6 +70,7 @@ model Rider {
   offers        JobOffer[]
   refreshTokens RefreshToken[]
   earnings      RiderEarning[]
+  payoutRequests PayoutRequest[]
   photos        JobPhoto[]
 
   @@index([status])
@@ -445,6 +446,40 @@ model JobPhoto {
 
 /// A rider's balance, as entries. Signed pesewas. FEE and UPLIFT credit,
 /// COMMISSION and PAYOUT debit. Sum = balance.
+/// A rider asking to be paid what they have earned.
+///
+/// Separate from RiderEarning on purpose. An earning is a fact about work that
+/// happened; a request is a conversation about money that has not moved yet,
+/// and collapsing the two would mean either inventing a zero-value earning or
+/// losing the request once it is settled. The PAYOUT earning is written when
+/// the money actually leaves, and points back here.
+model PayoutRequest {
+  id String @id @default(uuid()) @db.Uuid
+
+  rider   Rider  @relation(fields: [riderId], references: [id])
+  riderId String @db.Uuid @map("rider_id")
+
+  /// The balance at the moment of asking. Kept because the balance moves: a
+  /// rider who asks for GHS 200 and completes two more jobs before it is paid
+  /// should be able to see what they asked for.
+  amountMinor Int @map("amount_minor")
+
+  /// REQUESTED | PAID | DECLINED
+  status String @default("REQUESTED")
+
+  /// What the rider said, and later what the owner said back.
+  note      String?
+  ownerNote String? @map("owner_note")
+
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  settledAt   DateTime? @map("settled_at")
+  settledBy   String?   @map("settled_by")
+
+  @@index([riderId, status])
+  @@index([status, requestedAt])
+  @@map("payout_requests")
+}
+
 model RiderEarning {
   id String @id @default(uuid()) @db.Uuid
 

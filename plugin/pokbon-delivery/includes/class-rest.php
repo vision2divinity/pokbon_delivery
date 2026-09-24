@@ -39,6 +39,12 @@ class Pokbon_Delivery_REST {
 			'permission_callback' => [ self::class, 'verify' ],
 		] );
 
+		register_rest_route( $ns, '/delivery/payout-request', [
+			'methods'             => 'POST',
+			'callback'            => [ self::class, 'payout_request' ],
+			'permission_callback' => [ self::class, 'verify' ],
+		] );
+
 		register_rest_route( $ns, '/delivery/payment/prompt', [
 			'methods'             => 'POST',
 			'callback'            => [ self::class, 'payment_prompt' ],
@@ -90,6 +96,76 @@ class Pokbon_Delivery_REST {
 	}
 
 	// ─── messages ───────────────────────────────────────────────────────────
+
+	/**
+	 * A rider has asked to be paid. Make sure a human finds out.
+	 *
+	 * The delivery service records the request and stops there — it never
+	 * decides who is told or in what words. This does: an SMS to the owner's
+	 * phone if one is set, an email to the site admin, and an entry in the
+	 * plugin's own log either way.
+	 *
+	 * Never fails the request. The rider's ask is already recorded on the other
+	 * side; if the SMS gateway is down, losing the notification is bad but
+	 * losing the request would be worse, and the payouts screen shows it
+	 * regardless of whether any message got out.
+	 */
+	public static function payout_request( WP_REST_Request $request ) {
+		return self::once( $request, static function ( array $body ) {
+			$name   = (string) ( $body['riderName'] ?? 'A rider' );
+			$amount = (float) ( $body['amount'] ?? 0 );
+			$momo   = (string) ( $body['momoNumber'] ?? '' );
+			$phone  = (string) ( $body['riderPhone'] ?? '' );
+			$note   = trim( (string) ( $body['note'] ?? '' ) );
+
+			$text = sprintf(
+				'POKBON: %s has asked to be paid %s. MoMo %s.',
+				$name,
+				Pokbon_Delivery_Settings::format( (int) round( $amount * 100 ) ),
+				$momo !== '' ? $momo : ( $phone !== '' ? $phone . ' (no MoMo number on file)' : 'not on file' )
+			);
+			if ( $note !== '' ) {
+				$text .= ' They said: ' . $note;
+			}
+
+			$sent_to = '';
+			$owner   = Pokbon_Delivery_Messages::normalise_ghana_phone(
+				(string) Pokbon_Delivery_Settings::get( 'payout_notify_phone' )
+			);
+			if ( $owner !== '' ) {
+				$reason = Pokbon_Delivery_Messages::sms_with_reason( $owner, $text, [ 'purpose' => 'payout_request' ] );
+				if ( $reason === '' ) {
+					$sent_to = $owner;
+				} else {
+					Pokbon_Delivery_Audit::log( 'delivery.payout_notify_failed', [
+						'reason' => $reason,
+					] );
+				}
+			}
+
+			// Email always, because it costs nothing and survives a dead
+			// gateway. wp_mail failing is not worth failing the request over.
+			$to = (string) get_option( 'admin_email' );
+			if ( $to !== '' ) {
+				@wp_mail(
+					$to,
+					sprintf( '[POKBON Delivery] %s has requested a payout', $name ),
+					$text . "
+
+POKBON Delivery → Riders → Payouts to settle it."
+				);
+			}
+
+			Pokbon_Delivery_Audit::log( 'delivery.payout_requested', [
+				'rider'   => $name,
+				'amount'  => $amount,
+				'sms_to'  => $sent_to,
+				'emailed' => $to,
+			] );
+
+			return [ 'ok' => true, 'notified' => $sent_to !== '' || $to !== '' ];
+		} );
+	}
 
 	public static function send_sms( WP_REST_Request $request ) {
 		return self::once( $request, static function ( array $body ) {

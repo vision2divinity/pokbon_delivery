@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.17
+ * Version:           0.5.18
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,21 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.18 (2026-09-24) — riders can ask to be paid, and being paid means something:
+ *   PAYOUT and ADJUSTMENT had been in the schema since the beginning and nothing
+ *   ever wrote one, so the "balance" on every screen — including the rider's —
+ *   was lifetime gross earnings. Sending a rider GH¢300 by mobile money changed
+ *   nothing anywhere, and after a few weeks neither side could say what had been
+ *   settled. A rider's only way to raise a payout was to telephone.
+ *   Now: a rider asks from their own app, respecting the payout cycle, and is
+ *   told in a sentence when they can ask again rather than meeting a button that
+ *   refuses. The request lands on a new Payouts screen, texts the number set in
+ *   Settings and emails the site admin. Recording a payout writes a negative
+ *   PAYOUT entry, so the balance becomes what is owed rather than what was ever
+ *   earned.
+ *   The screen shows what was asked for beside what is owed today, because a
+ *   rider who asks on Monday and works on Tuesday is owed more than they asked
+ *   for, and paying the request is how they end up chasing the difference.
  * 0.5.17 (2026-09-24) — a doorstep payment is finally written down:
  *   on_payment_complete() could never run for the one payment method it was
  *   written for. It hangs off woocommerce_payment_complete, which was only

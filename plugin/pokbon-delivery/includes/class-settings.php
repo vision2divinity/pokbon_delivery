@@ -60,6 +60,15 @@ class Pokbon_Delivery_Settings {
 			],
 			'operating_hours'         => [ 'open' => '06:00', 'close' => '22:00', 'days' => [ 0, 1, 2, 3, 4, 5, 6 ] ],
 			'payout_cycle'            => 'weekly',
+			/*
+			 * Where a payout request lands.
+			 *
+			 * Empty means email only, to the site admin. A rider asking to be
+			 * paid is the one message an owner cannot afford to see a day late,
+			 * so it is worth a number — but requiring one would mean a fresh
+			 * install silently dropping requests until somebody filled it in.
+			 */
+			'payout_notify_phone'     => '',
 			'standalone_refund_on_failure' => [ 'refundBps' => 10000 ],
 			'agreement_version'       => '2026-09-20',
 			'active_vehicle_classes'  => [ 'MOTORBIKE' ],

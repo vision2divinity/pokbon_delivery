@@ -45,6 +45,17 @@ export default function RiderHome() {
   // Whether position is being reported in the background. False means the
   // rider declined that permission and only gets offers while the app is open.
   const [backgroundLocation, setBackgroundLocation] = useState(false);
+  /*
+   * What the rider is owed, and whether they can ask for it.
+   *
+   * The balance alone was never enough. It was lifetime gross earnings — money
+   * already paid was still counted in it — and a rider's only way to raise a
+   * payout was to telephone. An unexplained number a contractor cannot act on
+   * is the most common reason they stop turning up, and they tell other riders
+   * why.
+   */
+  const [payout, setPayout] = useState<Awaited<ReturnType<typeof riderApi.payoutStatus>> | null>(null);
+  const [asking, setAsking] = useState(false);
 
   /*
    * Put reporting back after a restart, and never claim it is running when it
@@ -110,6 +121,9 @@ export default function RiderHome() {
   const load = useCallback(async () => {
     try {
       const [a, o] = await Promise.all([jobsApi.active(), jobsApi.offers()]);
+      // Separately and forgivingly: a payout panel that fails to load must not
+      // take the job list with it.
+      void riderApi.payoutStatus().then(setPayout).catch(() => undefined);
       setActive(a.jobs);
       setOffers(o.offers);
       announce(o.offers);
@@ -335,11 +349,40 @@ export default function RiderHome() {
       feature('earningsScreen') ? (
         <Card key="earnings">
           <H2>{copy('earnings', 'title')}</H2>
-          <Field label={copy('earnings', 'balance')} value={money(rider?.balance ?? 0)} />
+          <Field label={copy('earnings', 'balance')} value={money(payout?.balance ?? rider?.balance ?? 0)} />
           <P muted>
             {rider?.completedJobs ?? 0} delivered
             {rider?.pendingUplift ? ` · ${money(rider.pendingUplift)} uplift on your next delivery` : ''}
           </P>
+
+          {payout?.openRequest ? (
+            <Notice tone="info">
+              You asked for {money(payout.openRequest.amount)}. POKBON has been told and will pay you.
+            </Notice>
+          ) : payout?.canRequest ? (
+            <Button
+              title="Ask to be paid"
+              busy={asking}
+              onPress={async () => {
+                setAsking(true);
+                try {
+                  setPayout(await riderApi.requestPayout());
+                } catch (e) {
+                  // The server's refusal is already written for the rider.
+                  setError(e instanceof Error ? e.message : copy('errors', 'generic'));
+                } finally {
+                  setAsking(false);
+                }
+              }}
+            />
+          ) : payout ? (
+            <P muted>
+              {payout.reason}
+              {payout.nextEligibleAt
+                ? ` You can ask again on ${new Date(payout.nextEligibleAt).toLocaleDateString()}.`
+                : ''}
+            </P>
+          ) : null}
         </Card>
       ) : null,
 

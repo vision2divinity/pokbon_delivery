@@ -140,6 +140,7 @@ class Pokbon_Delivery_Admin {
 					'auto_create_jobs'      => ! empty( $_POST['auto_create_jobs'] ),
 					// 'auto' and '' are both meaningful here, so this is not
 					// run through a "pick one of the known statuses" guard.
+					'payout_notify_phone'       => sanitize_text_field( (string) wp_unslash( $_POST['payout_notify_phone'] ?? '' ) ),
 					'require_delivery_coverage' => ! empty( $_POST['require_delivery_coverage'] ),
 					'order_status_on_assigned'  => sanitize_key( (string) wp_unslash( $_POST['order_status_on_assigned'] ?? 'ready-to-ship' ) ),
 					'order_status_on_picked_up' => sanitize_key( (string) wp_unslash( $_POST['order_status_on_picked_up'] ?? 'in-transit' ) ),
@@ -872,6 +873,10 @@ class Pokbon_Delivery_Admin {
 
 	public static function render_riders(): void {
 		require POKBON_DELIVERY_DIR . 'admin/pages/riders.php';
+	}
+
+	public static function render_payouts(): void {
+		require POKBON_DELIVERY_DIR . 'admin/pages/payouts.php';
 	}
 
 	public static function render_zones(): void {

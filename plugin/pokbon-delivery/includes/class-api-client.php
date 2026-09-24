@@ -117,6 +117,28 @@ class Pokbon_Delivery_API_Client {
 		] );
 	}
 
+	/** Payout requests waiting on the owner. */
+	public static function payout_requests( string $status = 'REQUESTED' ) {
+		return self::get( '/plugin/riders/payouts', [ 'status' => $status ] );
+	}
+
+	/** Record that the money has been sent. Writes the rider's PAYOUT entry. */
+	public static function settle_payout( string $id, float $amount, string $actor, string $note = '' ) {
+		return self::post( '/plugin/riders/payouts/' . rawurlencode( $id ) . '/settle', [
+			'amount' => $amount,
+			'actor'  => $actor,
+			'note'   => $note,
+		] );
+	}
+
+	/** Turn a request down, with a reason the rider can read. */
+	public static function decline_payout( string $id, string $actor, string $note ) {
+		return self::post( '/plugin/riders/payouts/' . rawurlencode( $id ) . '/decline', [
+			'actor' => $actor,
+			'note'  => $note,
+		] );
+	}
+
 	/** Close a failed job from the office: the goods are back with the sender. */
 	public static function return_job( string $job_id, string $reason, string $actor ) {
 		return self::post( '/jobs/' . rawurlencode( $job_id ) . '/returned', [

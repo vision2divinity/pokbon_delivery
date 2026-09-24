@@ -95,6 +95,18 @@ export class PluginClient {
   }
 
   /**
+   * A rider has asked to be paid. Tell the plugin; it decides who hears about it.
+   *
+   * Deliberately not an sms.send with the words already chosen. The plugin owns
+   * money and messages, so it decides whether this becomes an SMS, an email,
+   * both or neither, and who it reaches — the same rule that keeps every other
+   * business decision out of this service.
+   */
+  async payoutRequested(input: Record<string, unknown>): Promise<void> {
+    await this.post('/delivery/payout-request', input);
+  }
+
+  /**
    * Ask the plugin to push the MoMo prompt. One intent per job: the plugin
    * keys on jobId and returns the same intent on a retry (contract § 4b).
    */

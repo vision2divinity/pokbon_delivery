@@ -144,6 +144,23 @@ $last_sync  = Pokbon_Delivery_Settings::last_sync();
 			</td>
 		</tr>
 		<tr>
+			<th scope="row">When a rider asks to be paid</th>
+			<td>
+				<input name="payout_notify_phone" type="text" class="regular-text"
+					value="<?php echo esc_attr( (string) ( $settings['payout_notify_phone'] ?? '' ) ); ?>"
+					placeholder="024 000 0000">
+				<p class="description" style="max-width:56em">
+					A rider can ask to be paid from their own app. The request always lands on
+					<strong>Payouts</strong> and is always emailed to the site admin; put a number here and
+					it will text you as well. Leave it empty for email only.
+					<br><br>
+					Worth filling in: this is the one message where being a day late is felt by somebody
+					who is owed money and cannot chase it any other way. How often a rider may ask is set
+					by the payout cycle below.
+				</p>
+			</td>
+		</tr>
+		<tr>
 			<th scope="row">Areas you do not serve</th>
 			<td>
 				<label>

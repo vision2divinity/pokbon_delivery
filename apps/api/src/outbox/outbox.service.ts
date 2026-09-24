@@ -7,7 +7,7 @@ const SWEEP_INTERVAL_MS = 3_000;
 const BATCH = 20;
 const MAX_BACKOFF_MS = 10 * 60_000;
 
-export type OutboundType = 'job.status' | 'sms.send' | 'inbox.send';
+export type OutboundType = 'job.status' | 'sms.send' | 'inbox.send' | 'payout.requested';
 
 /**
  * How long a perishable message stays worth sending.
@@ -207,6 +207,8 @@ export class OutboxService implements OnModuleInit, OnModuleDestroy {
       }
       case 'inbox.send':
         return this.plugin.sendInbox(payload as Parameters<PluginClient['sendInbox']>[0]);
+      case 'payout.requested':
+        return this.plugin.payoutRequested(payload);
       default:
         throw new Error(`Unknown outbound type ${type as string}`);
     }

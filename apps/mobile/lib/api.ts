@@ -321,6 +321,18 @@ export interface RiderOffer {
   earnings: { riderFee: number; uplift: number; commission: number; total: number; currency: string };
 }
 
+/** What a rider is owed, and whether they may ask for it yet. */
+export interface PayoutStatus {
+  balance: number;
+  currency: string;
+  canRequest: boolean;
+  /** A sentence written for the rider, not an error code. */
+  reason: string | null;
+  cycle: string;
+  nextEligibleAt: string | null;
+  openRequest: { id: string; amount: number; requestedAt: string } | null;
+}
+
 export const rider = {
   me: () => api<RiderMe>('/rider/me'),
   update: (data: Record<string, unknown>) => api<RiderMe>('/rider/me', { method: 'PATCH', body: data }),
@@ -331,6 +343,18 @@ export const rider = {
     api<RiderMe>('/rider/me/duty', { method: 'PUT', body: { onDuty, ...at } }),
   ping: (lat: number, lng: number, accuracy?: number) =>
     api<{ accepted: boolean }>('/rider/me/location', { method: 'POST', body: { lat, lng, accuracy } }),
+  /**
+   * What the rider is owed, and whether they may ask for it.
+   *
+   * The reason is a sentence written for the rider, not a code — a refusal a
+   * contractor cannot understand is how you lose one.
+   */
+  payoutStatus: () => api<PayoutStatus>('/rider/me/payout'),
+
+  // Answers with the same shape, so the screen re-renders from one source.
+  requestPayout: (note?: string) =>
+    api<PayoutStatus>('/rider/me/payout', { method: 'POST', body: { note } }),
+
   earnings: () =>
     api<{ balance: number; currency: string; payoutCycle: string; entries: Array<Record<string, unknown>> }>(
       '/rider/me/earnings',

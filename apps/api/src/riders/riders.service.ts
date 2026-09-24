@@ -3,6 +3,7 @@ import { Rider } from '@prisma/client';
 import { ACTIVE_RIDER_STATUSES, OfferStatus, RiderStatus, RiderUpsertInput } from '@pokbon-delivery/shared';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { OutboxService } from '../outbox/outbox.service';
 import { fromMinor, SettingsService } from '../settings/settings.service';
 
 /** What a rider must have before they can submit for review. PRD § 4a. */
@@ -29,6 +30,7 @@ export class RidersService {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     private readonly auth: AuthService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async me(riderId: string) {
@@ -342,6 +344,213 @@ export class RidersService {
   }
 
   // ---------------------------------------------------------------------------
+
+  /**
+   * How long a rider waits between asking to be paid.
+   *
+   * The owner sets `payout_cycle`; this turns it into days. An unknown value
+   * falls to weekly rather than to zero, because "I do not recognise this
+   * setting" must not become "ask as often as you like".
+   */
+  private payoutCycleDays(): number {
+    const cycle = String(this.settings.get('payout_cycle') ?? 'weekly').toLowerCase();
+    switch (cycle) {
+      case 'daily':
+        return 1;
+      case 'biweekly':
+      case 'fortnightly':
+        return 14;
+      case 'monthly':
+        return 30;
+      case 'weekly':
+      default:
+        return 7;
+    }
+  }
+
+  /**
+   * What a rider is owed, and whether they may ask for it yet.
+   *
+   * Shown in the app rather than hidden behind a button that refuses: a rider
+   * who cannot ask should be told when they can, in a date, not discover it by
+   * tapping. An unexplained balance and an unexplained refusal are the two
+   * fastest ways to lose a contractor.
+   */
+  async payoutStatus(riderId: string) {
+    const [balance, open, last] = await Promise.all([
+      this.balanceMinor(riderId),
+      this.prisma.payoutRequest.findFirst({
+        where: { riderId, status: 'REQUESTED' },
+        orderBy: { requestedAt: 'desc' },
+      }),
+      this.prisma.payoutRequest.findFirst({ where: { riderId }, orderBy: { requestedAt: 'desc' } }),
+    ]);
+
+    const cycleDays = this.payoutCycleDays();
+    const nextEligibleAt = last ? new Date(last.requestedAt.getTime() + cycleDays * 86_400_000) : null;
+    const tooSoon = nextEligibleAt !== null && nextEligibleAt > new Date();
+
+    let reason: string | null = null;
+    if (open) reason = 'You have already asked. We are working on it.';
+    else if (balance <= 0) reason = 'There is nothing to pay out yet.';
+    else if (tooSoon) reason = 'Payouts run on a cycle. You can ask again on the date shown.';
+
+    return {
+      balance: fromMinor(balance),
+      currency: 'GHS',
+      canRequest: reason === null,
+      reason,
+      cycle: String(this.settings.get('payout_cycle') ?? 'weekly'),
+      nextEligibleAt: tooSoon ? nextEligibleAt : null,
+      openRequest: open
+        ? { id: open.id, amount: fromMinor(open.amountMinor), requestedAt: open.requestedAt }
+        : null,
+    };
+  }
+
+  /**
+   * A rider asks to be paid.
+   *
+   * The whole point is that somebody is told. Until now a rider's only way to
+   * raise this was to telephone, and the balance they were looking at was
+   * lifetime gross earnings rather than anything owed — so neither side could
+   * say what a settled week looked like.
+   *
+   * The API does not decide who is told or in what words: it records the
+   * request and emits `payout.requested`, and the plugin — which owns money and
+   * messages — decides whether that becomes an SMS, an email, or both.
+   */
+  async requestPayout(riderId: string, note?: string) {
+    const rider = await this.mustFind(riderId);
+    if (rider.status !== RiderStatus.APPROVED) {
+      throw new ConflictException('Only an approved rider can request a payout');
+    }
+
+    const status = await this.payoutStatus(riderId);
+    if (!status.canRequest) {
+      // The reason is already a sentence written for the rider.
+      throw new ConflictException(status.reason ?? 'You cannot request a payout right now');
+    }
+
+    const balance = await this.balanceMinor(riderId);
+    const request = await this.prisma.payoutRequest.create({
+      data: {
+        riderId,
+        amountMinor: balance,
+        note: note?.slice(0, 300) || null,
+      },
+    });
+
+    await this.outbox.enqueue('payout.requested', {
+      requestId: request.id,
+      riderId,
+      riderName: rider.fullName,
+      riderPhone: rider.phone,
+      momoNumber: rider.momoNumber,
+      amount: fromMinor(balance),
+      currency: 'GHS',
+      completedJobs: rider.completedJobs,
+      note: request.note,
+      requestedAt: request.requestedAt.toISOString(),
+    });
+
+    this.logger.log(`Rider ${rider.fullName} requested a payout of ${fromMinor(balance)}`);
+    return this.payoutStatus(riderId);
+  }
+
+  /** Every request the owner might act on. Newest first. */
+  async listPayoutRequests(status = 'REQUESTED', limit = 100) {
+    const rows = await this.prisma.payoutRequest.findMany({
+      where: status === 'ALL' ? {} : { status },
+      orderBy: { requestedAt: 'desc' },
+      take: Math.min(limit, 200),
+      include: { rider: true },
+    });
+
+    // What each rider is owed NOW, which has moved since they asked.
+    const balances = await Promise.all(rows.map((r) => this.balanceMinor(r.riderId)));
+
+    return rows.map((r, i) => ({
+      id: r.id,
+      status: r.status,
+      amount: fromMinor(r.amountMinor),
+      note: r.note,
+      ownerNote: r.ownerNote,
+      requestedAt: r.requestedAt,
+      settledAt: r.settledAt,
+      settledBy: r.settledBy,
+      rider: {
+        id: r.rider.id,
+        fullName: r.rider.fullName,
+        phone: r.rider.phone,
+        momoNumber: r.rider.momoNumber,
+        completedJobs: r.rider.completedJobs,
+      },
+      /** The balance today, which is what should actually be paid. */
+      balanceNow: fromMinor(balances[i]),
+    }));
+  }
+
+  /**
+   * The money left. Record it, so the balance means something.
+   *
+   * This is the half that was missing entirely: PAYOUT and ADJUSTMENT have been
+   * in the schema since the beginning and nothing ever wrote one, so the
+   * "balance" on every screen was lifetime gross earnings. Paying a rider by
+   * mobile money changed nothing anywhere, and within two months of weekly
+   * payouts that number is unreadable.
+   *
+   * The amount is what the owner actually sent, not what was asked for — they
+   * may pay part of it, and a ledger that records the request instead of the
+   * transfer is a ledger that disagrees with the bank.
+   */
+  async settlePayout(requestId: string, amountMinor: number, actor: string, ownerNote?: string) {
+    const request = await this.prisma.payoutRequest.findUnique({ where: { id: requestId } });
+    if (!request) throw new NotFoundException('Payout request not found');
+    if (request.status !== 'REQUESTED') {
+      throw new ConflictException(`This request is already ${request.status.toLowerCase()}`);
+    }
+    if (amountMinor <= 0) throw new BadRequestException('A payout must be more than zero');
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.riderEarning.create({
+        data: {
+          riderId: request.riderId,
+          type: 'PAYOUT',
+          // Negative: the ledger sums to a balance, so money leaving must
+          // subtract. A positive PAYOUT row would double what is owed.
+          amountMinor: -Math.abs(amountMinor),
+          note: `Paid out by ${actor}${ownerNote ? ` — ${ownerNote}` : ''}`,
+        },
+      });
+
+      await tx.payoutRequest.update({
+        where: { id: requestId },
+        data: {
+          status: 'PAID',
+          settledAt: new Date(),
+          settledBy: actor,
+          ownerNote: ownerNote?.slice(0, 300) || null,
+        },
+      });
+
+      return { ok: true, paid: fromMinor(Math.abs(amountMinor)) };
+    });
+  }
+
+  /** Turned down, with a reason the rider can read. */
+  async declinePayout(requestId: string, actor: string, ownerNote: string) {
+    const request = await this.prisma.payoutRequest.findUnique({ where: { id: requestId } });
+    if (!request) throw new NotFoundException('Payout request not found');
+    if (request.status !== 'REQUESTED') {
+      throw new ConflictException(`This request is already ${request.status.toLowerCase()}`);
+    }
+    await this.prisma.payoutRequest.update({
+      where: { id: requestId },
+      data: { status: 'DECLINED', settledAt: new Date(), settledBy: actor, ownerNote: ownerNote.slice(0, 300) },
+    });
+    return { ok: true };
+  }
 
   private async mustFind(riderId: string): Promise<Rider> {
     const rider = await this.prisma.rider.findUnique({ where: { id: riderId } });

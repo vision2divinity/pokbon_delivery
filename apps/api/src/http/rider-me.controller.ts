@@ -52,6 +52,23 @@ export class RiderMeController {
     return this.riders.earnings(riderId);
   }
 
+  /**
+   * What the rider is owed, and whether they may ask for it yet.
+   *
+   * Separate from /me so the app can poll it cheaply after a delivery closes
+   * without re-fetching the whole profile.
+   */
+  @Get('payout')
+  payoutStatus(@CurrentRider('sub') riderId: string) {
+    return this.riders.payoutStatus(riderId);
+  }
+
+  /** "Please pay me." The one thing a rider could previously only do by phone. */
+  @Post('payout')
+  requestPayout(@CurrentRider('sub') riderId: string, @Body() body: { note?: string }) {
+    return this.riders.requestPayout(riderId, typeof body?.note === 'string' ? body.note : undefined);
+  }
+
   @Post('leave')
   leave(@CurrentRider('sub') riderId: string) {
     return this.riders.leave(riderId);
