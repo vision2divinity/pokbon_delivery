@@ -595,7 +595,36 @@ class Pokbon_Delivery_Orders {
 
 		$legs  = count( self::job_ids_for( $order ) );
 		$stuck = count( $flagged );
-		$paid  = $order->get_date_paid() || $order->is_paid();
+
+		/*
+		 * Deliberately NOT is_paid(). Again.
+		 *
+		 * is_paid() asks whether the order reached a paid STATUS, and
+		 * WooCommerce counts `processing` as one — and a cash-on-delivery
+		 * order is moved to processing the moment it is placed, which is the
+		 * very event that creates these jobs. So is_paid() answers true for
+		 * exactly the orders where no money has been taken, and the first
+		 * alarm this code ever sent told the owner in capital letters that a
+		 * COD customer HAD ALREADY PAID.
+		 *
+		 * is_pay_on_delivery() carries this warning a thousand lines below,
+		 * class-payments.php carries it twice more, and it has now caught
+		 * somebody a fourth time. get_date_paid() is the only honest answer:
+		 * it is set when money was actually captured.
+		 */
+		$paid   = $order->get_date_paid() !== null;
+		$at_door = self::is_pay_on_delivery( $order );
+
+		if ( $paid ) {
+			$money = ' THE CUSTOMER HAS ALREADY PAID.';
+		} elseif ( $at_door ) {
+			// Nothing is owed for a leg nobody collected — cod_split() gives a
+			// vendor with no job no share of the door charge. The customer is
+			// still waiting for goods they ordered, which is the actual problem.
+			$money = ' Pay on delivery, so nothing has been charged for it.';
+		} else {
+			$money = '';
+		}
 
 		$headline = sprintf(
 			'No rider for %s on order #%d — %d of %d deliveries stuck.%s',
@@ -603,7 +632,7 @@ class Pokbon_Delivery_Orders {
 			$order_id,
 			$stuck,
 			max( 1, $legs ),
-			$paid ? ' THE CUSTOMER HAS ALREADY PAID.' : ''
+			$money
 		);
 
 		$order->add_order_note( sprintf(
@@ -611,14 +640,17 @@ class Pokbon_Delivery_Orders {
 			$headline,
 			$paid
 				? 'This customer has paid for goods that are not on their way. Assign a rider by hand from the job board, or refund the items from this vendor.'
-				: 'Assign a rider by hand from the job board.'
+				: ( $at_door
+					? 'The customer pays at the door, and will not be charged for a parcel nobody collected — but they are still waiting for it. Assign a rider by hand from the job board, or tell them it is not coming.'
+					: 'Assign a rider by hand from the job board.' )
 		) );
 
 		Pokbon_Delivery_Audit::log( 'delivery.unfulfilled', [
 			'order_id'  => $order_id,
 			'job_id'    => $job_id,
 			'vendor_id' => $vendor,
-			'paid'      => (bool) $paid,
+			'paid'      => $paid,
+			'at_door'   => $at_door,
 			'stuck'     => $stuck,
 			'legs'      => $legs,
 		] );
@@ -650,8 +682,8 @@ Collection point: " . (string) ( $payload['pickupZoneCode'] ?? 'unknown' ) . "
 Job: " . $job_id . "
 
 Nobody was in range. The delivery service keeps retrying for 24 hours, but a
-customer who has paid should not be waiting on a retry — open POKBON Delivery
--> Job board and assign a rider by hand, or refund this vendor's items."
+customer should not be waiting on a retry — open POKBON Delivery -> Job board
+and assign a rider by hand, or tell them these items are not coming."
 			);
 		}
 	}

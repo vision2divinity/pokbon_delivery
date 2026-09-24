@@ -95,9 +95,16 @@ class Pokbon_Delivery_Order_Panel {
 					count( $stuck ),
 					count( $job_ids ),
 					esc_html(
-						( $order->get_date_paid() || $order->is_paid() )
+						/*
+						 * get_date_paid(), never is_paid(): WooCommerce counts
+						 * `processing` as paid, and a COD order is processing
+						 * from the moment it is placed.
+						 */
+						$order->get_date_paid() !== null
 							? 'This customer has paid. Assign a rider by hand from the job board, or refund the items that are not coming.'
-							: 'Assign a rider by hand from the job board.'
+							: ( Pokbon_Delivery_Orders::is_pay_on_delivery( $order )
+								? 'Pay on delivery — the customer will not be charged for a parcel nobody collected, but they are still waiting for it.'
+								: 'Assign a rider by hand from the job board.' )
 					)
 				);
 			}

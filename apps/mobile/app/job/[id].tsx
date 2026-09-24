@@ -291,8 +291,45 @@ export default function JobScreen() {
 
   return (
     <Screen>
-      {/* Who and where. The phone number is here because calling is the
-          fallback that actually works in Ghana. */}
+      {/*
+        THE COLLECTION POINT COMES FIRST, because that is where the rider goes
+        first. The screen used to open with the customer's address, which is
+        the second half of the job — so a rider glancing at their phone at a
+        junction read the destination and had to scroll to find where they were
+        actually heading. The order of the cards is the order of the work.
+      */}
+      <Card>
+        <Field
+          label="What you are carrying"
+          value={job.parcel.description || `${job.parcel.itemCount} item(s), ${job.parcel.size.toLowerCase()}`}
+        />
+        <Field label="Collect from" value={job.pickup.address} />
+        {job.pickup.note ? <Field label="Collection note" value={job.pickup.note} /> : null}
+        {/*
+          The collection point had an address and no way to navigate to it.
+          Every job starts by getting to a shop the rider has usually never
+          been to, and the only help on this screen was a line of text to
+          retype into another app while sitting on a bike.
+        */}
+        <Row>
+          <View style={{ flex: 1 }}>
+            <Button
+              title="Call the shop"
+              kind="secondary"
+              onPress={() => void Linking.openURL(`tel:${job.pickup.contactPhone}`)}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              title="Navigate"
+              kind="secondary"
+              onPress={() => void Linking.openURL(navigationUrl(job.pickup, true))}
+            />
+          </View>
+        </Row>
+      </Card>
+      {/* Where it goes after that. The phone number is here because calling
+          is the fallback that actually works in Ghana. */}
       <Card>
         <Field label="Deliver to" value={job.dropoff.contactName || 'Customer'} />
         <Field label="Address" value={job.dropoff.address} />
@@ -343,39 +380,6 @@ export default function JobScreen() {
         </Row>
       </Card>
 
-      {/* What the rider is carrying, and how to find the collection point.
-          Both come from whoever booked it and are shown before anything
-          else that needs a decision. */}
-      <Card>
-        <Field
-          label="What you are carrying"
-          value={job.parcel.description || `${job.parcel.itemCount} item(s), ${job.parcel.size.toLowerCase()}`}
-        />
-        <Field label="Collect from" value={job.pickup.address} />
-        {job.pickup.note ? <Field label="Collection note" value={job.pickup.note} /> : null}
-        {/*
-          The collection point had an address and no way to navigate to it.
-          Every job starts by getting to a shop the rider has usually never
-          been to, and the only help on this screen was a line of text to
-          retype into another app while sitting on a bike.
-        */}
-        <Row>
-          <View style={{ flex: 1 }}>
-            <Button
-              title="Call the shop"
-              kind="secondary"
-              onPress={() => void Linking.openURL(`tel:${job.pickup.contactPhone}`)}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              title="Navigate"
-              kind="secondary"
-              onPress={() => void Linking.openURL(navigationUrl(job.pickup, true))}
-            />
-          </View>
-        </Row>
-      </Card>
 
       <Card>
         <Field label="You earn" value={money(job.earnings.total)} />
