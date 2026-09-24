@@ -1,10 +1,77 @@
 # POKBON Delivery — state of play
 
-Last updated: 2026-09-22 (mobile app zone pricing)
+Last updated: **2026-09-24, end of a long live-testing day.**
 
 Read this first if you are picking the project up cold, or resuming after a
 break. It is the state of the work, not a design document — the design lives in
 `docs/PRD-pokbon-delivery-2026-09-20-draft3.md`.
+
+---
+
+## If you are starting here, read this bit
+
+**Shipped today:** Delivery `0.5.32`, Checkout `1.3.2`, Mobile App `1.21.5`.
+All three are installed on the live site. Everything is committed and pushed.
+
+**What was happening.** Francis was running live multi-vendor tests against
+real orders (87715, 87716, 87717) and each test turned up something. Those are
+all fixed and written up under **Closed**, newest first. He had just asked to
+start a fresh session because this one had grown long.
+
+**The five things most worth knowing before you touch anything:**
+
+1. **`is_paid()` is a trap and it has caught four separate pieces of code.**
+   WooCommerce counts `processing` as paid, and a cash-on-delivery order is
+   `processing` from the moment it is placed — which is the event that creates
+   the delivery jobs. **Use `get_date_paid()`.** It is set only when money was
+   actually captured.
+2. **The API never touches money and never sends a message.** When something
+   needs a decision about either, it belongs in the plugin. This is why
+   `cod_split()` and the doorstep charge live in PHP.
+3. **A fallback must announce itself.** Every serious bug in this project has
+   been a sensible default producing a plausible wrong answer: a zone centre
+   used as a doorstep, a default collection point standing in for a vendor, a
+   list price recorded as revenue. Whenever you add a fallback, make the system
+   say it took one — `pinned`, `alreadyCredited`, the pickup `source`.
+4. **One bad row can freeze everything.** The settings push is all-or-nothing,
+   so a single malformed zone stops every zone, price and setting reaching the
+   riders. `Settings::sync_blockers()` now catches that class before it asks.
+5. **The rider is never shown the delivery code or the amount due.** Both are
+   structural — `toRiderJobView()` simply does not read those fields.
+
+**Where the code lives** is the next section but one, and it matters: two
+WordPress plugins now live in this repository.
+
+---
+
+## Live state, sampled 2026-09-24 23:24 UTC
+
+Re-check before trusting any of it.
+
+| | |
+|---|---|
+| API | up on `:3001`, reachable through the tunnel (both `/health` 200) |
+| Metro | up on `:8081` |
+| Postgres | up, `pokbon-delivery-postgres`, host port 5435 |
+| Jobs | 34 — 12 DELIVERED, 9 RETURNED, **10 UNFULFILLED**, 2 CANCELLED, 1 ASSIGNED |
+| Outbox | **0 pending**, clean. 5 rows retired as refused (the guest-inbox poison) |
+| Riders | 2 approved. Test Rider on duty, position 2 min old, based OLDASHOGMANESTATESTATION |
+
+**Two things in that table need reading properly.**
+
+The **10 UNFULFILLED** jobs are real and mostly from today's tests: orders
+87712, 87714, 87715, 87716 and 87717 each have legs from MADINA and BOLGA that
+nobody was in range for. That is not a bug — it is the dispatch radius doing
+its job — but it is the state the new alarm exists to shout about, and those
+orders are genuinely part-delivered. **Clear them before the next test run** or
+every sweep will keep retrying them and the board will be unreadable.
+
+The seeded **Kofi Test Rider** has a position four days old. Harmless while off
+duty, but it makes the roster read as two riders when there is at most one.
+
+**Before any dispatch test:** open the rider app and let it report a position.
+`location_stale_seconds` is **300**, and a stale rider is silently ineligible —
+dispatch says "nobody eligible" while the board shows somebody on duty.
 
 ---
 
@@ -93,16 +160,35 @@ bash ops/tunnel-watchdog.sh             # restarts it when it silently stops ser
 
 # 4. Metro, for the rider app
 cd apps/mobile && npx expo start --dev-client --port 8081
-adb reverse tcp:8081 tcp:8081
+adb devices                              # note the id, e.g. 3f5d119a
+adb -s <id> reverse tcp:8081 tcp:8081    # -s IS needed; see "Things that will mislead you"
+```
+
+Already running? They are background processes and survive a closed terminal:
+
+```bash
+curl -s -o /dev/null -w "API %{http_code}
+"    http://127.0.0.1:3001/health
+curl -s -o /dev/null -w "tunnel %{http_code}
+" https://delivery-dev.pokbongroup.com/health
+curl -s -o /dev/null -w "metro %{http_code}
+"  http://127.0.0.1:8081/status
 ```
 
 The rider app is a **development build** installed on the device
 (`com.pokbongroup.delivery`), not Expo Go — Expo Go on that phone is SDK 57 and
 the project is SDK 54.
 
-Shipping a plugin change: bump `Version:` in `plugin/pokbon-delivery/pokbon-delivery.php`,
-add a changelog entry in the same header, run the checks below, zip the
-`pokbon-delivery` directory, and Francis uploads it.
+Shipping a plugin change: bump `Version:` in the plugin's main file **and the
+matching `define( ..._VERSION )` right below it** — they have drifted apart
+twice, and in POKBON Checkout that constant is the cache-buster on
+`checkout.js`, so forgetting it means returning buyers keep the old script.
+Then run the checks, zip the plugin directory, and Francis uploads it.
+
+The API needs a rebuild and restart whenever `packages/shared` or
+`apps/api` changes, and `npm run db:push` as well when `schema.prisma` does.
+**Stop the API first** — a running Node process holds the Prisma DLL and
+`generate` fails with EPERM.
 
 ### The checks, all of which must pass
 
@@ -136,6 +222,25 @@ it. If you add something, add it here rather than starting a third list.
 
 Priority order is what Francis agreed on the 23rd: what makes the system lie to
 somebody comes before what makes it inconvenient.
+
+### What to pick up first, 2026-09-25
+
+Nothing below is blocked. In the order I would take them:
+
+1. **Clear the 10 UNFULFILLED jobs** from yesterday's tests (orders 87712,
+   87714, 87715, 87716, 87717). They are real, they retry hourly for 24 hours,
+   and they make the job board unreadable. Decide each: assign by hand, or
+   cancel the leg and refund. Three of those orders are PREPAID.
+2. **Item 1, position reporting.** Still the most damaging open item, and it
+   bit the testing twice yesterday — a rider on duty with a stale fix is
+   silently ineligible and dispatch reports "nobody eligible".
+3. **Finish the multi-vendor test run** Francis was part-way through. The last
+   thing changed was one-prompt-per-rider (0.5.32), which has not yet been
+   exercised against a real order where one rider holds several legs.
+4. Then the ordered list below, starting at item 7 (the arrival guard).
+
+**Not yet started, agreed for later:** item 15 (rider profile management, the
+11-item list) and item 16 (the Postman collection, explicitly end-of-project).
 
 ---
 
@@ -636,35 +741,36 @@ Kept with their evidence, so none of this gets re-investigated.
 
 ---
 
-## Live state, 2026-09-22 18:53 UTC
-
-Sampled, not remembered. Re-check before trusting any of it.
-
-| | |
-|---|---|
-| API | up on `:3001`, and reachable through the tunnel (both `/health` 200) |
-| Postgres | up, `pokbon-delivery-postgres` on host port 5435 |
-| Jobs | 11 — 5 DELIVERED, 5 RETURNED, 1 CANCELLED |
-| Riders | 2 APPROVED, **both marked on duty** |
-| Outbox | clean: 142 events, **0 pending**, nothing stuck (`job.status` 110, `sms.send` 21, `inbox.send` 11) |
-| Checks | all 8 pass |
-
-**Two things in that table are wrong in a way that matters.**
-
-The real rider (`+233556780200`) is on duty with a position **468 minutes old**
-— timestamped 11:05:18, which is the minute the phone was locked this morning
-and the background task stopped reporting (item 9). If an order arrived right
-now, dispatch would report "nobody eligible" while the board showed a rider on
-duty. That is item 9 not as a theory but as the current live state.
-
-The seeded test rider (`+233244000111`) is also marked on duty, with a position
-from 2026-09-20. It will never be offered anything because it is permanently
-stale, but it makes the rider list read as two available riders when there is
-at most one. Worth clearing before any dispatch test.
-
----
-
 ## Things that will mislead you
+
+- **`is_paid()` says a cash-on-delivery order is paid.** WooCommerce counts
+  `processing` as a paid status, and a COD order is moved to `processing` the
+  moment it is placed — the same event that creates the delivery jobs. So it
+  answers true for exactly the orders where no money has been taken. It has
+  caught four separate pieces of this codebase. **`get_date_paid()`, always.**
+- **"Unable to load script" on the rider app is almost never Metro.** It is
+  `adb reverse` having been dropped — that mapping lives in the adb daemon, not
+  in Metro, and it disappears when the cable is unplugged, the phone locks and
+  re-handshakes USB, or adb restarts. The fix is one command, and **it needs
+  `-s <device>`**: plain `adb reverse tcp:8081 tcp:8081` intermittently answers
+  "no devices/emulators found" on this machine even with the phone listed.
+  ```
+  adb devices                                   # get the id
+  adb -s <id> reverse tcp:8081 tcp:8081
+  adb -s <id> shell 'curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/status'
+  ```
+- **The services keep running when the terminal is gone.** They are background
+  processes, not terminal jobs. Check with `netstat -ano | grep -E ":3001|:8081"`
+  and `tasklist | grep cloudflared` before concluding anything is down.
+- **The zone radius and the offer radius are different settings.** A zone's
+  radius decides which zone a pin belongs to. `offer_radius_metres` (default
+  8000) decides which riders are offered a job. Widening a zone does not widen
+  dispatch, and this has already caused one "why did that leg not reach the
+  rider" conversation. The home-station bypass is why a rider 14 km away still
+  got their own zone's job.
+- **`php -l` will not save you from everything.** A stray word left in a
+  comment position parsed cleanly as a **goto label** and lint passed. Read the
+  diff.
 
 - **`HTTP 200` from the SMS gateway does not mean delivered.** Zenoph answers
   200 for rejections. The Mobile App plugin now reads the handshake; if you see
