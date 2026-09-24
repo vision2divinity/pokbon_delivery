@@ -1,0 +1,208 @@
+/* POKBON Checkout — tight, modern, mobile-first. Edit freely. */
+:root {
+	--pkb-bg: #f7f8fa;
+	--pkb-card: #fff;
+	--pkb-text: #1a1d21;
+	--pkb-muted: #6b7280;
+	--pkb-border: #e5e7eb;
+	--pkb-accent: #f59e0b;        /* POKBON orange */
+	--pkb-accent-strong: #d97706;
+	--pkb-success: #16a34a;
+	--pkb-success-strong: #15803d;
+	--pkb-danger: #b91c1c;
+	--pkb-radius: 8px;
+	--pkb-radius-lg: 12px;
+}
+
+.pokbon-checkout { max-width: 1180px; margin: 0 auto; padding: 16px; color: var(--pkb-text); font-size: 15px; line-height: 1.45; }
+.pokbon-checkout * { box-sizing: border-box; }
+
+/* Progress strip */
+.pokbon-progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 24px; padding: 0; list-style: none; }
+.pokbon-progress li { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding-top: 8px; position: relative; color: var(--pkb-muted); font-size: 13px; font-weight: 500; }
+.pokbon-progress li::before { content: ""; position: absolute; top: 18px; left: -50%; right: 50%; height: 2px; background: var(--pkb-border); z-index: 0; }
+.pokbon-progress li:first-child::before { display: none; }
+.pokbon-progress li .pkb-step { z-index: 1; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 2px solid var(--pkb-border); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: var(--pkb-muted); }
+.pokbon-progress li.is-done .pkb-step { background: var(--pkb-success); border-color: var(--pkb-success); color: #fff; }
+.pokbon-progress li.is-done::before { background: var(--pkb-success); }
+.pokbon-progress li.is-current { color: var(--pkb-text); }
+.pokbon-progress li.is-current .pkb-step { background: var(--pkb-text); border-color: var(--pkb-text); color: #fff; }
+
+/* Top bar with returning-customer link */
+.pokbon-topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; font-size: 14px; color: var(--pkb-muted); }
+.pokbon-topbar a { color: var(--pkb-accent-strong); font-weight: 600; text-decoration: none; }
+.pokbon-topbar a:hover { text-decoration: underline; }
+
+/* Errors */
+.pokbon-checkout__intro { background: #fff7ed; border-left: 3px solid var(--pkb-accent); padding: 10px 14px; border-radius: 6px; margin: 0 0 16px; font-size: 14px; }
+.pokbon-checkout__errors { background: #fef2f2; border: 1px solid #fecaca; color: var(--pkb-danger); padding: 12px 14px; border-radius: var(--pkb-radius); margin: 0 0 16px; font-size: 14px; }
+.pokbon-checkout__errors ul { margin: 4px 0 0 18px; padding: 0; }
+.pokbon-checkout__errors li { margin-bottom: 2px; }
+
+/* Two-column layout */
+.pokbon-checkout__grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.pokbon-checkout__main { min-width: 0; }
+.pokbon-checkout__main > .pokbon-section { background: var(--pkb-card); border: 1px solid var(--pkb-border); border-radius: var(--pkb-radius-lg); padding: 18px 20px; margin-bottom: 14px; }
+.pokbon-section h2 { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+
+/* Compact form fields */
+.pokbon-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pokbon-field { display: flex; flex-direction: column; margin-bottom: 10px; }
+.pokbon-field:last-child { margin-bottom: 0; }
+.pokbon-field label { font-weight: 500; font-size: 13px; margin-bottom: 4px; color: #374151; }
+.pokbon-field .req { color: var(--pkb-danger); margin-left: 2px; }
+.pokbon-field input,
+.pokbon-field select,
+.pokbon-field textarea {
+	font: inherit; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: var(--pkb-radius); background: #fff; color: inherit; min-height: 42px; width: 100%; outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.pokbon-field input:focus,
+.pokbon-field select:focus,
+.pokbon-field textarea:focus { border-color: var(--pkb-accent); box-shadow: 0 0 0 3px rgba(245, 158, 11, .18); }
+.pokbon-field textarea { min-height: 80px; resize: vertical; }
+
+/* Radio cards (delivery / payment selectors) */
+.pokbon-radio-group { display: grid; gap: 8px; }
+.pokbon-radio-card { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: var(--pkb-radius); cursor: pointer; background: #fff; transition: border-color .15s, background .15s; }
+.pokbon-radio-card:hover { border-color: #9ca3af; }
+.pokbon-radio-card input[type="radio"] { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--pkb-accent); }
+.pokbon-radio-card__title { display: block; font-weight: 600; font-size: 14px; grid-column: 2 / 3; }
+.pokbon-radio-card__desc { display: block; grid-column: 2 / 3; color: var(--pkb-muted); font-size: 13px; margin-top: 2px; }
+.pokbon-radio-card:has(input:checked) { border-color: var(--pkb-accent); background: #fffbeb; }
+
+.pokbon-pickup-address { white-space: pre-line; background: #fffbeb; border: 1px solid #fde68a; padding: 12px 14px; border-radius: var(--pkb-radius); font-size: 14px; }
+
+/* "View USSD payment instructions" link on the Pay by USSD card */
+.pokbon-ussd-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; padding: 0; border: 0; background: none; color: var(--pkb-accent-strong); font: inherit; font-size: 12px; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.pokbon-ussd-link:hover { color: var(--pkb-accent); }
+
+/* No-JS fallback (rendered only inside <noscript>) */
+.pokbon-ussd-info { background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--pkb-radius); padding: 12px 14px; margin-top: 10px; font-size: 13px; }
+.pokbon-ussd-info p { margin: 0 0 8px; }
+
+/* USSD instructions popup — centered modal mirroring the mobile app's USSD screen */
+.pokbon-modal-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(17, 24, 39, .6); animation: pokbon-fade-in .15s ease-out; }
+.pokbon-modal-overlay[hidden] { display: none; }
+body.pokbon-modal-open { overflow: hidden; }
+
+.pokbon-modal { position: relative; width: 100%; max-width: 380px; max-height: calc(100vh - 32px); overflow-y: auto; background: var(--pkb-card); border-radius: var(--pkb-radius-lg); padding: 30px 24px 22px; text-align: center; box-shadow: 0 20px 50px rgba(0, 0, 0, .35); animation: pokbon-modal-in .18s ease-out; }
+.pokbon-modal__close { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #f3f4f6; color: var(--pkb-muted); font-size: 20px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.pokbon-modal__close:hover { background: #e5e7eb; color: var(--pkb-text); }
+.pokbon-modal__icon { font-size: 32px; margin-bottom: 6px; }
+.pokbon-modal h2 { margin: 0 0 14px; font-size: 17px; font-weight: 700; }
+.pokbon-modal__code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 30px; font-weight: 800; letter-spacing: 1px; background: #fffbeb; border: 1px dashed var(--pkb-accent); border-radius: var(--pkb-radius); padding: 12px 10px; margin-bottom: 10px; color: var(--pkb-text); word-break: break-all; }
+.pokbon-modal__merchant { font-size: 13px; color: var(--pkb-muted); margin-bottom: 14px; }
+.pokbon-modal__merchant strong { color: var(--pkb-text); }
+.pokbon-modal__instructions { text-align: left; background: #f9fafb; border: 1px solid var(--pkb-border); border-radius: var(--pkb-radius); padding: 12px 14px; font-size: 13px; color: #374151; line-height: 1.5; margin-bottom: 18px; }
+.pokbon-modal__instructions p:first-child { margin-top: 0; }
+.pokbon-modal__instructions p:last-child { margin-bottom: 0; }
+.pokbon-modal__actions { display: flex; gap: 10px; }
+.pokbon-modal__actions .pokbon-button { flex: 1; min-height: 44px; }
+.pokbon-button--ghost { background: #f3f4f6; color: var(--pkb-text); }
+.pokbon-button--ghost:hover { background: #e5e7eb; }
+
+@keyframes pokbon-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pokbon-modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* Terms + Place Order area */
+.pokbon-checkout__terms { padding: 10px 0 6px; font-size: 13px; color: var(--pkb-muted); }
+.pokbon-checkout__actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.pokbon-back-link { color: var(--pkb-accent-strong); text-decoration: none; font-size: 14px; font-weight: 500; }
+.pokbon-back-link:hover { text-decoration: underline; }
+
+.pokbon-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 24px; border: 0; border-radius: var(--pkb-radius); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; text-decoration: none; transition: transform .05s, background .15s, box-shadow .15s; min-height: 48px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.pokbon-button--primary { background: var(--pkb-success); color: #fff; }
+.pokbon-button--primary:hover { background: var(--pkb-success-strong); box-shadow: 0 2px 6px rgba(22, 163, 74, .3); }
+.pokbon-button--primary:active { transform: translateY(1px); }
+.pokbon-button[disabled] { opacity: .65; cursor: not-allowed; }
+.pokbon-button__total { font-weight: 800; }
+.pokbon-button .pkb-lock { font-size: 12px; }
+
+/* Trust badges row */
+.pokbon-trust { margin-top: 14px; padding: 12px; background: var(--pkb-card); border: 1px solid var(--pkb-border); border-radius: var(--pkb-radius-lg); display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+.pokbon-trust__item { font-size: 12px; color: #374151; line-height: 1.3; }
+.pokbon-trust__item strong { display: block; font-size: 13px; color: var(--pkb-text); margin-bottom: 2px; }
+.pokbon-trust__icon { font-size: 18px; display: block; margin-bottom: 4px; }
+
+/* Sidebar */
+.pokbon-checkout__summary { position: sticky; top: 16px; padding: 18px 20px; background: var(--pkb-card); border: 1px solid var(--pkb-border); border-radius: var(--pkb-radius-lg); min-width: 0; }
+.pokbon-checkout__summary h2 { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+.pokbon-summary-items { list-style: none; padding: 0; margin: 0 0 12px; }
+.pokbon-summary-item { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--pkb-border); align-items: center; }
+.pokbon-summary-item:last-child { border-bottom: 0; }
+.pokbon-summary-item__img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: #f3f4f6; }
+.pokbon-summary-item__name { font-weight: 600; font-size: 13px; line-height: 1.3; }
+.pokbon-summary-item__body dl, .pokbon-summary-item__body p { margin: 3px 0 0; color: var(--pkb-muted); font-size: 12px; }
+.pokbon-summary-item__price { font-weight: 600; font-size: 14px; }
+
+.pokbon-totals { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; margin-top: 4px; }
+.pokbon-totals dt { color: var(--pkb-muted); font-size: 14px; }
+.pokbon-totals dd { margin: 0; text-align: right; font-size: 14px; }
+.pokbon-totals__grand { font-size: 17px; font-weight: 700; padding-top: 8px; border-top: 1px solid var(--pkb-border); color: var(--pkb-text); }
+
+/* Help tile */
+.pokbon-help { margin-top: 12px; padding: 12px 14px; background: #f9fafb; border: 1px solid var(--pkb-border); border-radius: var(--pkb-radius); font-size: 13px; }
+.pokbon-help h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+.pokbon-help a { color: var(--pkb-accent-strong); font-weight: 600; text-decoration: none; }
+.pokbon-help a:hover { text-decoration: underline; }
+
+/* Payment image (Paystack logo) */
+.pokbon-pay-logo { height: 22px; vertical-align: middle; margin-left: 6px; }
+
+/* Empty cart */
+.pokbon-checkout--empty { text-align: center; padding: 60px 16px; }
+
+/* Responsive */
+@media (max-width: 900px) {
+	.pokbon-checkout__grid { grid-template-columns: 1fr; gap: 12px; }
+	.pokbon-checkout__main { order: 2; }
+	.pokbon-checkout__summary { position: static; order: 1; }
+}
+
+@media (max-width: 600px) {
+	.pokbon-checkout { padding: 10px; font-size: 14px; }
+	.pokbon-row { grid-template-columns: 1fr; gap: 0; }
+	.pokbon-checkout__main > .pokbon-section { padding: 14px 14px; margin-bottom: 10px; border-radius: 10px; }
+	.pokbon-section h2 { font-size: 15px; margin-bottom: 10px; }
+
+	.pokbon-field { margin-bottom: 8px; }
+	.pokbon-field input,
+	.pokbon-field select,
+	.pokbon-field textarea { min-height: 44px; padding: 11px 12px; font-size: 16px; } /* 16px prevents iOS zoom on focus */
+
+	.pokbon-radio-card { padding: 10px 12px; }
+	.pokbon-radio-card__title { font-size: 14px; }
+	.pokbon-radio-card__desc { font-size: 12px; }
+
+	.pokbon-progress { gap: 4px; margin-bottom: 14px; }
+	.pokbon-progress li { font-size: 11px; padding-top: 6px; }
+	.pokbon-progress li .pkb-step { width: 24px; height: 24px; font-size: 11px; }
+	.pokbon-progress li::before { top: 14px; }
+
+	.pokbon-checkout__summary { padding: 14px; border-radius: 10px; }
+	.pokbon-summary-item { grid-template-columns: 40px 1fr auto; gap: 8px; padding: 8px 0; }
+	.pokbon-summary-item__img { width: 40px; height: 40px; }
+	.pokbon-summary-item__name { font-size: 13px; }
+	.pokbon-totals dt, .pokbon-totals dd { font-size: 13px; }
+	.pokbon-totals__grand { font-size: 16px; }
+
+	.pokbon-checkout__actions { flex-direction: column-reverse; align-items: stretch; gap: 10px; margin-top: 6px; }
+	.pokbon-back-link { text-align: center; padding: 8px; }
+	.pokbon-button { width: 100%; min-height: 50px; font-size: 16px; }
+
+	.pokbon-trust { grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px 8px; }
+	.pokbon-trust__item { font-size: 11px; }
+	.pokbon-trust__item strong { font-size: 12px; }
+	.pokbon-trust__icon { font-size: 16px; }
+
+	.pokbon-help { padding: 10px 12px; font-size: 12px; }
+
+	.pokbon-modal { padding: 24px 18px 18px; max-width: 100%; }
+	.pokbon-modal__code { font-size: 26px; }
+	.pokbon-modal__actions { flex-direction: column-reverse; }
+}
+
+@media (max-width: 380px) {
+	.pokbon-progress li { font-size: 10px; }
+	.pokbon-trust__item strong { font-size: 11px; }
+}
