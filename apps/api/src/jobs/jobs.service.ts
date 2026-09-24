@@ -149,7 +149,20 @@ export class JobsService {
           source: input.source,
           externalRef: input.orderId,
           vendorId: input.vendorId ?? null,
-          buyerUserId: input.buyerUserId ?? null,
+          /*
+           * A guest checkout has no buyer account, and WooCommerce says so
+           * with customer id 0 — which the plugin sends as the STRING "0",
+           * and "0" is truthy in JavaScript. So every guest order looked like
+           * a signed-in buyer, an in-app inbox message was queued for user
+           * zero, the plugin rightly refused it as "buyerUserId and title are
+           * required", and the outbox retried it for ever: five of them were
+           * still going at 130 attempts, every fifteen seconds, days later.
+           *
+           * Normalised once, here, so nothing downstream has to remember that
+           * "0" means nobody.
+           */
+          buyerUserId:
+            input.buyerUserId && input.buyerUserId !== '0' ? input.buyerUserId : null,
           riderSource: input.riderSource,
           status: JobStatus.CREATED,
           pickupLat: input.pickup.lat,

@@ -92,6 +92,24 @@ export function toGsmSafe(text: string): { text: string; dropped: string[] } {
  * this sweep, so the two cannot disagree. Delivery is at-least-once; the plugin
  * is idempotent on the event id (contract § 1), which is also this row's id.
  */
+/**
+ * Did the plugin refuse this message, as opposed to failing to receive it?
+ *
+ * 4xx means the request was understood and rejected: the same bytes will be
+ * rejected again, for ever. 408 and 429 are the exceptions — "you were too
+ * slow" and "you are going too fast" both get better by waiting — and 5xx is
+ * the plugin having a bad day, which is precisely what retrying is for.
+ *
+ * Read off the message because that is what the client throws; a structured
+ * status would be better and is worth doing when PluginClient next changes.
+ */
+export function isPermanentRefusal(error: unknown): boolean {
+  const status = /failed with (\d{3})/.exec(String(error))?.[1];
+  if (!status) return false;
+  const code = Number(status);
+  return code >= 400 && code < 500 && code !== 408 && code !== 429;
+}
+
 @Injectable()
 export class OutboxService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OutboxService.name);
@@ -153,6 +171,41 @@ export class OutboxService implements OnModuleInit, OnModuleDestroy {
           delivered++;
         } catch (error) {
           const attempts = row.attempts + 1;
+
+          /*
+           * A refusal is not a failure to be retried.
+           *
+           * Retrying exists for the things that get better on their own: the
+           * plugin was restarting, the tunnel dropped, WordPress was slow.
+           * A 400 is the other kind — the plugin read the message, understood
+           * it, and said it is wrong. Sending the identical bytes again cannot
+           * change that answer, and the backoff caps out, so the row retries
+           * for ever at a fixed interval.
+           *
+           * Five of them were doing exactly that: a guest order's inbox
+           * message, refused since the 22nd, on attempt 130, every fifteen
+           * seconds, filling the log so thoroughly that a real failure would
+           * have been invisible in it.
+           *
+           * So a rejection is recorded and let go, with the reason kept on the
+           * row. Nothing is lost that was ever going to be delivered.
+           */
+          const refused = isPermanentRefusal(error);
+          if (refused) {
+            await this.prisma.outboundEvent.update({
+              where: { id: row.id },
+              data: {
+                deliveredAt: new Date(),
+                attempts,
+                lastError: `Refused, not retried: ${String(error).slice(0, 400)}`,
+              },
+            });
+            this.logger.error(
+              `Outbound ${row.type} ${row.id} was REFUSED by the plugin and will not be retried: ${String(error)}`,
+            );
+            continue;
+          }
+
           const backoff = Math.min(MAX_BACKOFF_MS, 5_000 * attempts * attempts);
           await this.prisma.outboundEvent.update({
             where: { id: row.id },

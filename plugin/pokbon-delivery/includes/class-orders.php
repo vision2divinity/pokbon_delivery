@@ -266,7 +266,19 @@ class Pokbon_Delivery_Orders {
 						: 0,
 					'currency'  => 'GHS',
 				],
-				'buyerUserId' => (string) $order->get_customer_id(),
+				/*
+				 * Only a real account. A guest checkout is customer 0, and
+				 * sending "0" told the delivery service there was a buyer to
+				 * message — which produced an in-app message addressed to user
+				 * zero, refused by this plugin's own inbox route as "buyerUserId
+				 * and title are required", and then retried for ever.
+				 *
+				 * Omitted rather than sent as zero, so "no account" and "account
+				 * number zero" stop looking like the same thing.
+				 */
+				'buyerUserId' => $order->get_customer_id() > 0
+					? (string) $order->get_customer_id()
+					: '',
 			];
 
 			/*
