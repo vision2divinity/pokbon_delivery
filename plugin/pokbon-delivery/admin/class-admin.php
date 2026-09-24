@@ -209,12 +209,41 @@ class Pokbon_Delivery_Admin {
 					$error = 'A zone needs a code.';
 					break;
 				}
+
+				/*
+				 * A centre that is not a place on Earth is refused here, in words.
+				 *
+				 * It used to be `(float) $_POST['lng']` and nothing else, so a
+				 * lost decimal point — -0.1651 typed as -1651 — was saved
+				 * without complaint. The zone then looked fine on this screen,
+				 * and the only symptom appeared on a different page: the whole
+				 * settings push to the delivery service was rejected, naming
+				 * `zones.7.lng`, which is an array index and tells nobody which
+				 * zone it means.
+				 *
+				 * The cost is not the typo. It is that ONE bad zone stops EVERY
+				 * zone, price and setting from reaching the API — riders go on
+				 * being dispatched from the last good copy, so new zones do
+				 * nothing and changed radii do nothing, and the screen that says
+				 * so is not the screen you were working on.
+				 */
+				$zone_lat = (float) ( $_POST['lat'] ?? 0 );
+				$zone_lng = (float) ( $_POST['lng'] ?? 0 );
+				if ( $zone_lat < -90 || $zone_lat > 90 || $zone_lng < -180 || $zone_lng > 180 ) {
+					$error = sprintf(
+						'That centre is not a place: %s, %s. Latitude runs -90 to 90 and longitude -180 to 180 — Ghana is about 4.7 to 11.2 and -3.3 to 1.2. A lost decimal point is the usual cause.',
+						$zone_lat,
+						$zone_lng
+					);
+					break;
+				}
+
 				Pokbon_Delivery_Settings::save_zone( [
 					'code'         => $code,
 					'name'         => (string) wp_unslash( $_POST['name'] ?? '' ),
 					'region'       => (string) wp_unslash( $_POST['region'] ?? '' ),
-					'lat'          => (float) ( $_POST['lat'] ?? 0 ),
-					'lng'          => (float) ( $_POST['lng'] ?? 0 ),
+					'lat'          => $zone_lat,
+					'lng'          => $zone_lng,
 					'radiusMetres' => (int) ( $_POST['radius'] ?? 5000 ),
 					'band'         => (string) wp_unslash( $_POST['band'] ?? '' ),
 					'active'       => ! empty( $_POST['active'] ),

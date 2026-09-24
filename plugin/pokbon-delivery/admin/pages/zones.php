@@ -186,12 +186,15 @@ $bands = Pokbon_Delivery_Settings::active_bands();
 		<tr>
 			<th scope="row">Centre</th>
 			<td>
-				<input name="lat" type="number" step="0.0001" placeholder="latitude" style="width:12em"
+				<input name="lat" type="number" step="0.0001" min="-90" max="90" placeholder="latitude" style="width:12em"
 					value="<?php echo esc_attr( $edit['lat'] ?? '' ); ?>" required>
-				<input name="lng" type="number" step="0.0001" placeholder="longitude" style="width:12em"
+				<input name="lng" type="number" step="0.0001" min="-180" max="180" placeholder="longitude" style="width:12em"
 					value="<?php echo esc_attr( $edit['lng'] ?? '' ); ?>" required>
 				<p class="description">
 					From Google Maps: right-click the spot and the first line of the menu is the pair.
+					Ghana is about <code>4.7</code> to <code>11.2</code> latitude and <code>-3.3</code> to
+					<code>1.2</code> longitude &mdash; a lost decimal point is the usual mistake, and it
+					stops every zone and price reaching the riders, not just this one.
 				</p>
 			</td>
 		</tr>

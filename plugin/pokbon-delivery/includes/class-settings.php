@@ -749,8 +749,58 @@ class Pokbon_Delivery_Settings {
 		];
 	}
 
+	/**
+	 * Zones the delivery service will refuse, named, before we ask it.
+	 *
+	 * The API validates the whole payload and reports `zones.7.lng`, which is
+	 * an array index into a list nobody can see. Worse, ONE bad zone rejects
+	 * EVERY zone, price and setting — so a lost decimal point in a zone added
+	 * on Tuesday silently freezes the entire delivery configuration on
+	 * Monday's copy, and the screen that reports it is not the screen anybody
+	 * was working on.
+	 *
+	 * Checked here so the message can say which zone and what is wrong with it.
+	 *
+	 * @return string[] One sentence per bad zone.
+	 */
+	public static function sync_blockers(): array {
+		$problems = [];
+
+		foreach ( self::zones() as $zone ) {
+			$code = (string) ( $zone['code'] ?? '?' );
+			$lat  = (float) ( $zone['lat'] ?? 0 );
+			$lng  = (float) ( $zone['lng'] ?? 0 );
+
+			if ( $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 ) {
+				$problems[] = sprintf(
+					'Zone %s has a centre that is not a place on Earth (%s, %s). Ghana is about 4.7 to 11.2 latitude and -3.3 to 1.2 longitude — a lost decimal point is the usual cause. Fix it on the Zones screen.',
+					$code,
+					$lat,
+					$lng
+				);
+			}
+		}
+
+		return $problems;
+	}
+
 	/** Returns true when the API accepted the push. */
 	public static function push(): bool {
+		/*
+		 * Refuse to push a payload we already know will be rejected, and say
+		 * why in terms of the thing somebody typed.
+		 */
+		$blockers = self::sync_blockers();
+		if ( $blockers !== [] ) {
+			$sync               = get_option( self::OPT_SYNC, [] );
+			$sync               = is_array( $sync ) ? $sync : [];
+			$sync['dirty']      = true;
+			$sync['last_error'] = implode( ' ', $blockers );
+			$sync['tried_at']   = gmdate( 'c' );
+			update_option( self::OPT_SYNC, $sync, false );
+			return false;
+		}
+
 		$result = Pokbon_Delivery_API_Client::post( '/plugin/settings/sync', self::sync_payload() );
 
 		$sync = get_option( self::OPT_SYNC, [] );

@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.26
+ * Version:           0.5.27
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -528,7 +528,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'POKBON_DELIVERY_VERSION', '0.5.26' );
+define( 'POKBON_DELIVERY_VERSION', '0.5.27' );
 define( 'POKBON_DELIVERY_FILE', __FILE__ );
 define( 'POKBON_DELIVERY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'POKBON_DELIVERY_URL', plugin_dir_url( __FILE__ ) );
