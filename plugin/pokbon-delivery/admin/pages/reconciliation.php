@@ -79,11 +79,40 @@ $result = Pokbon_Delivery_API_Client::jobs( [ 'from' => $from, 'to' => $to, 'lim
 		$charged = null;
 		$matrix  = null;
 		$vendor  = '';
+		/*
+		 * Who sold it, from the job rather than from order meta.
+		 *
+		 * This read `_wcfmmp_store_name` off the order — a key nothing in this
+		 * codebase, or in WCFM, ever writes. So the Vendor column was an em
+		 * dash on every single row, which reads as "this job has no vendor"
+		 * rather than "nobody ever filled this in". The job has carried
+		 * vendorId since the beginning.
+		 */
+		$vendor_id = (int) ( $job['vendorId'] ?? 0 );
+		if ( $vendor_id > 0 ) {
+			$vendor = (string) get_user_meta( $vendor_id, 'store_name', true );
+			if ( $vendor === '' ) {
+				$who    = get_userdata( $vendor_id );
+				$vendor = $who ? (string) $who->display_name : '';
+			}
+		}
+
 		if ( $is_pokbon && $order_id !== '' && function_exists( 'wc_get_order' ) ) {
 			$order = wc_get_order( (int) $order_id );
 			if ( $order ) {
-				$charged = (float) $order->get_shipping_total();
-				$vendor  = (string) $order->get_meta( '_wcfmmp_store_name' );
+				/*
+				 * This leg's share, not the whole order's delivery fee.
+				 *
+				 * get_shipping_total() is the fee for the ORDER. Reading it
+				 * inside a per-job loop counted a three-vendor order's fee three
+				 * times, and then charged one leg's payout against all of it, so
+				 * every row on a multi-vendor order looked profitable and the
+				 * summary above was inflated by the same multiple.
+				 *
+				 * money.buyerPrice is the leg's share — split proportionally at
+				 * dispatch — and has been sitting there unread.
+				 */
+				$charged = $quoted;
 
 				// What the zone matrix says this route is worth. Recorded at
 				// dispatch beside what checkout actually took, so the gap is a

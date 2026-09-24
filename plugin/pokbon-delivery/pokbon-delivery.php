@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.19
+ * Version:           0.5.20
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,20 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.20 (2026-09-24) — reconciliation names the vendor, and counts each leg once:
+ *   The Vendor column read `_wcfmmp_store_name` from order meta — a key nothing
+ *   in this plugin, or in WCFM, ever writes. So it was an em dash on every row,
+ *   which reads as "this job has no vendor" rather than "nobody ever filled
+ *   this in". The job has carried vendorId all along; the name now comes from
+ *   the vendor's own store profile.
+ *   And "Collected for delivery" read the ORDER's shipping total inside a
+ *   per-job loop, so a three-vendor order counted its fee three times while
+ *   charging one leg's payout against all of it — every row on a multi-vendor
+ *   order looked profitable and the summary was inflated by the same multiple.
+ *   It now reads the leg's own share, which has been sitting unread since the
+ *   fee split shipped. Freight jobs correct themselves as a side effect: they
+ *   already carry zero delivery revenue, so they stop contributing an air
+ *   freight charge to a rider-delivery total.
  * 0.5.19 (2026-09-24) — a job is priced by the whole ladder, not its first rung:
  *   Job creation asked Settings::price(), which answers only for an explicit
  *   zone pair somebody typed in by hand — while the Price matrix screen tells
