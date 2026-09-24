@@ -513,6 +513,93 @@ class Pokbon_Delivery_Payments {
 	 * reads. Writing it is the whole reason the commission engine stops
 	 * creating a vendor debt and starts counting the gateway fee.
 	 */
+	/**
+	 * Write down that the buyer paid at the door, whatever the order status is.
+	 *
+	 * Everything on_payment_complete() did, minus the dependence on a
+	 * WooCommerce hook that cannot fire for these orders, plus the two things
+	 * it never did: date_paid, and working on a multi-vendor order.
+	 *
+	 * Idempotent on META_PAID_AT, because the rider's poll, the webhook and a
+	 * dispatcher's retry can all arrive at this within seconds of each other.
+	 *
+	 * @param mixed  $order     The WooCommerce order.
+	 * @param string $reference The Paystack reference that succeeded.
+	 * @param string $paid_at   Paystack's own timestamp, when it gave one.
+	 * @param array  $verify    The verify response, for the gateway fee.
+	 */
+	public static function record_doorstep_payment( $order, string $reference, string $paid_at = '', array $verify = [] ): void {
+		if ( ! $order || (string) $order->get_meta( self::META_PAID_AT ) !== '' ) {
+			return; // Already recorded.
+		}
+
+		$paid_at = $paid_at !== '' ? gmdate( 'c', strtotime( $paid_at ) ) : gmdate( 'c' );
+
+		$order->update_meta_data( self::META_PAID_AT, $paid_at );
+		$order->update_meta_data( self::META_PAYMENT_REF, $reference );
+		$order->update_meta_data( self::META_STATUS, 'paid' );
+
+		/*
+		 * Paystack's cut, recorded where the marketplace's own webhook records
+		 * it. Absorbed invisibly until now, because the branch that writes it
+		 * sat behind the same guard.
+		 */
+		$fee = $verify['data']['fees'] ?? null;
+		if ( is_numeric( $fee ) ) {
+			$order->update_meta_data( '_pokbon_gateway_fee', round( ( (float) $fee ) / 100, 2 ) );
+		}
+
+		/*
+		 * date_paid is the durable signal everything else keys on, and its
+		 * absence is not cosmetic: is_pay_on_delivery() reads get_date_paid()
+		 * precisely so it does not trust a status. Without this a paid order
+		 * stays "pay on delivery" for ever, and re-dispatching it builds a
+		 * second job demanding the whole total again.
+		 */
+		if ( method_exists( $order, 'set_date_paid' ) && ! $order->get_date_paid() ) {
+			$order->set_date_paid( time() );
+		}
+
+		$order->save();
+
+		$order->add_order_note( sprintf(
+			'[POKBON Delivery] Paid at the door by mobile money. Paystack reference %s.',
+			$reference
+		) );
+
+		Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_PAYMENT_PAID, [
+			'order_id'  => $order->get_id(),
+			'reference' => $reference,
+		] );
+
+		/*
+		 * Every job on the order, not one. META_JOB_ID is only written when an
+		 * order produced exactly one job, so a multi-vendor order had nothing
+		 * here at all — the orders most likely to need the record were the ones
+		 * guaranteed not to get it.
+		 */
+		foreach ( Pokbon_Delivery_Orders::job_ids_for( $order ) as $job_id ) {
+			$result = Pokbon_Delivery_API_Client::report_payment( $job_id, [
+				'intentId'  => self::intent_id( (int) $order->get_id() ),
+				'status'    => 'paid',
+				'reference' => $reference,
+				'paidAt'    => $paid_at,
+			] );
+
+			if ( is_wp_error( $result ) ) {
+				// The money is in and the meta is written; only the rider's
+				// screen is behind, and the API polls its own payment status
+				// so it recovers by itself. It must still be visible.
+				Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_PAYMENT_FAILED, [
+					'order_id' => $order->get_id(),
+					'job_id'   => $job_id,
+					'stage'    => 'report_payment',
+					'error'    => $result->get_error_message(),
+				] );
+			}
+		}
+	}
+
 	public static function on_payment_complete( $order_id ): void {
 		if ( ! function_exists( 'wc_get_order' ) ) {
 			return;
@@ -522,46 +609,20 @@ class Pokbon_Delivery_Payments {
 			return;
 		}
 
-		$job_id = (string) $order->get_meta( self::META_JOB_ID );
-		if ( $job_id === '' ) {
-			return; // Not a delivery-collected payment. Nothing to do.
-		}
-		if ( (string) $order->get_meta( self::META_PAID_AT ) !== '' ) {
-			return; // Already recorded. Webhook and verify both land here.
+		// Not a delivery-collected payment. Nothing here to record.
+		if ( Pokbon_Delivery_Orders::job_ids_for( $order ) === [] ) {
+			return;
 		}
 
-		$reference = (string) $order->get_meta( '_pokbon_paystack_reference' );
-		$paid_at   = gmdate( 'c' );
-
-		$order->update_meta_data( self::META_PAID_AT, $paid_at );
-		$order->update_meta_data( self::META_PAYMENT_REF, $reference );
-		$order->update_meta_data( self::META_STATUS, 'paid' );
-		$order->save();
-
-		Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_PAYMENT_PAID, [
-			'order_id'  => $order->get_id(),
-			'job_id'    => $job_id,
-			'reference' => $reference,
-		] );
-
-		$result = Pokbon_Delivery_API_Client::report_payment( $job_id, [
-			'intentId'  => self::intent_id( (int) $order->get_id() ),
-			'status'    => 'paid',
-			'reference' => $reference,
-			'paidAt'    => $paid_at,
-		] );
-
-		if ( is_wp_error( $result ) ) {
-			// The money is in and the meta is written; only the rider's screen
-			// is behind. The API polls its own payment status, so this
-			// recovers by itself — but it must be visible if it does not.
-			Pokbon_Delivery_Audit::log( Pokbon_Delivery_Audit::EVENT_PAYMENT_FAILED, [
-				'order_id' => $order->get_id(),
-				'job_id'   => $job_id,
-				'stage'    => 'notify_api',
-				'error'    => $result->get_error_message(),
-			] );
-		}
+		/*
+		 * Delegates, so there is one implementation of "the buyer paid".
+		 *
+		 * This hook still fires for the paths where WooCommerce legitimately
+		 * completes a payment, and it should keep working. It is simply no
+		 * longer the only way the record gets written — which it could not be,
+		 * because it never fired for a doorstep payment at all.
+		 */
+		self::record_doorstep_payment( $order, (string) $order->get_meta( '_pokbon_paystack_reference' ) );
 	}
 
 	/**
@@ -600,10 +661,35 @@ class Pokbon_Delivery_Payments {
 				continue;
 			}
 
-			// Make sure WooCommerce agrees, which fires on_payment_complete().
-			if ( ! $order->is_paid() ) {
-				$order->payment_complete( $reference );
-			}
+			/*
+			 * Record it here, not through WooCommerce's hook.
+			 *
+			 * This used to be `if ( ! $order->is_paid() ) payment_complete()`,
+			 * on the reasoning that payment_complete() fires
+			 * woocommerce_payment_complete, which fires on_payment_complete(),
+			 * which writes the meta. Every link in that chain is real. The
+			 * first condition is not.
+			 *
+			 * A delivery job only exists because the order reached
+			 * `processing` — that is what creates it — and is_paid() counts
+			 * `processing` as paid. So the guard was always true and
+			 * payment_complete() was never called for a doorstep payment. Even
+			 * forced, WooCommerce only fires that hook and stamps date_paid
+			 * from on-hold, pending, failed or cancelled; `processing`,
+			 * `ready-to-ship` and `in-transit` are none of those.
+			 *
+			 * So on_payment_complete() could never run for the one payment
+			 * method it was written for. The money reached Paystack, the rider
+			 * handed over, both screens said paid — and `_pokbon_paid_on_delivery`
+			 * was never written, so the commission engine went on booking a
+			 * vendor debt for cash the vendor never touched and POKBON already
+			 * held. Nothing about that is visible from any screen.
+			 *
+			 * This file's own is_pay_on_delivery() carries a comment warning
+			 * that is_paid() counts `processing`. The lesson was learned, written
+			 * down, and then repeated three hundred lines away.
+			 */
+			self::record_doorstep_payment( $order, $reference, (string) ( $verify['data']['paid_at'] ?? '' ), $verify );
 
 			return [
 				'intentId'  => self::intent_id( (int) $order->get_id() ),

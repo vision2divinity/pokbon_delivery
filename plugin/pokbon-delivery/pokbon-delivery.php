@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.16
+ * Version:           0.5.17
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,23 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.17 (2026-09-24) — a doorstep payment is finally written down:
+ *   on_payment_complete() could never run for the one payment method it was
+ *   written for. It hangs off woocommerce_payment_complete, which was only
+ *   reached through `if ( ! $order->is_paid() ) payment_complete()` — and a
+ *   delivery job exists only because the order reached `processing`, which
+ *   is_paid() counts as paid. The guard was always true. Even forced,
+ *   WooCommerce fires that hook only from on-hold, pending, failed or
+ *   cancelled.
+ *   So `_pokbon_paid_on_delivery` was never written: the commission engine went
+ *   on booking a vendor debt for cash the vendor never touched and POKBON
+ *   already held, Paystack's fee was absorbed invisibly, and date_paid stayed
+ *   null so a paid order still answered "pay on delivery" — re-dispatch it and
+ *   it demanded the whole total again. The delivery completed and both screens
+ *   said paid. Only the ledger was wrong.
+ *   Recording now happens where the money is proven, in
+ *   confirm_existing_payment(), and covers every job on the order rather than
+ *   only orders that produced exactly one.
  * 0.5.16 (2026-09-23) — routes and bands can be taken out of service:
  *   Deleting a price already worked — blank both amounts — but there was no way
  *   to switch one off, so taking a route out of service for a week meant losing
