@@ -91,6 +91,8 @@ node scripts/check-momo-prefixes.mjs     # both copies of the network table agre
 node scripts/check-sms-text.mjs          # both copies of the GSM folder agree
 node scripts/check-message-templates.mjs # both copies fill a template the same
 node scripts/check-checkout-zones.mjs    # the website and the app quote the same price
+node scripts/check-fee-split.mjs         # a delivery fee split between legs still adds up
+node scripts/check-uplift.mjs            # the failed-trip uplift cannot be printed in a loop
 ```
 
 Each of these exists because something it now catches reached production.

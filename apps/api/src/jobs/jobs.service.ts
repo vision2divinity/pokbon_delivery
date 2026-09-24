@@ -543,7 +543,23 @@ export class JobsService {
 
     return this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUniqueOrThrow({ where: { id: riderId } });
-      const upliftMinor = rider.pendingUpliftMinor;
+
+      /*
+       * A trip that was completed is not a failed trip.
+       *
+       * FAILED -> EN_ROUTE -> DELIVERED is the honest version of the same path
+       * the loop abused: the customer was unreachable, rang back, and the
+       * rider finished. Without this the rider collects the full fee for the
+       * delivery AND the compensation for failing it — paid for one journey
+       * twice, which is not what the uplift is for.
+       *
+       * So this job's own credit comes back out of the pot before the pot is
+       * paid. Uplift earned on OTHER failed jobs is untouched and still pays
+       * out here, which is the whole design: you are compensated on your next
+       * delivery for the trip that went nowhere.
+       */
+      const ownCredit = job.upliftGeneratedMinor;
+      const upliftMinor = Math.max(0, rider.pendingUpliftMinor - ownCredit);
       const commission = commissionMinor(job);
 
       if (stored) {
@@ -563,7 +579,9 @@ export class JobsService {
       });
 
       return this.transition(tx, job, JobStatus.DELIVERED, `rider:${riderId}`, {
-        data: { deliveredAt: new Date(), upliftMinor },
+        // upliftGeneratedMinor is cleared: this job is settled, and leaving a
+        // stale credit on it would let a later correction pay it twice.
+        data: { deliveredAt: new Date(), upliftMinor, upliftGeneratedMinor: 0 },
         detail: { photo: Boolean(stored), riderFeeMinor: job.riderFeeMinor, upliftMinor, commissionMinor: commission },
         callbackExtra: {
           deliveryFee: fromMinor(job.buyerPriceMinor),
@@ -590,17 +608,46 @@ export class JobsService {
       if (stored) {
         await tx.jobPhoto.create({ data: { jobId, riderId, kind: 'FAILURE', url: stored.url, contentType: stored.contentType, bytes: stored.bytes } });
       }
+      /*
+       * Once per job, not once per failure.
+       *
+       * FAILED -> EN_ROUTE is a legal transition, and deliberately so: a
+       * customer who was unreachable rings back and the rider finishes the
+       * delivery. But the credit was unconditional, so failing, resuming and
+       * failing again paid the uplift every lap — two authenticated calls per
+       * iteration, unbounded, on a single job. Nothing capped it and nothing
+       * recorded that it had already been paid.
+       *
+       * upliftGeneratedMinor is the record. It is on the JOB rather than a
+       * counter on the rider because "has this trip already been compensated"
+       * is a fact about the trip, and a bare running total cannot answer it.
+       */
       let upliftCredited = 0;
-      if (job.source === JobSource.MARKETPLACE && job.riderSource === RiderSource.POKBON) {
+      const alreadyCredited = job.upliftGeneratedMinor > 0;
+      if (!alreadyCredited && job.source === JobSource.MARKETPLACE && job.riderSource === RiderSource.POKBON) {
         // The uplift is the markup on the rider fee, credited for the NEXT delivery (§ 11).
         upliftCredited = applyMarkup(job.riderFeeMinor, this.settings.get('failed_trip_uplift')) - job.riderFeeMinor;
         if (upliftCredited > 0) {
           await tx.rider.update({ where: { id: riderId }, data: { pendingUpliftMinor: { increment: upliftCredited } } });
         }
       }
+
       return this.transition(tx, job, JobStatus.FAILED, `rider:${riderId}`, {
-        data: { failedAt: new Date(), failureReason: input.reason, failureDetail: input.detail ?? null },
-        detail: { reason: input.reason, detail: input.detail, photo: Boolean(stored), upliftCreditedMinor: upliftCredited },
+        data: {
+          failedAt: new Date(),
+          failureReason: input.reason,
+          failureDetail: input.detail ?? null,
+          ...(upliftCredited > 0 ? { upliftGeneratedMinor: upliftCredited } : {}),
+        },
+        detail: {
+          reason: input.reason,
+          detail: input.detail,
+          photo: Boolean(stored),
+          upliftCreditedMinor: upliftCredited,
+          // Visible in the event log, so a rider asking why a second failure
+          // paid nothing gets an answer rather than a shrug.
+          alreadyCredited,
+        },
         callbackExtra: { failureReason: input.reason },
       });
     });
@@ -649,16 +696,35 @@ export class JobsService {
         data: { status: OfferStatus.WITHDRAWN, respondedAt: new Date() },
       });
 
-      if (accepted && job.source === JobSource.MARKETPLACE && job.riderSource === RiderSource.POKBON && job.riderId) {
-        const uplift = applyMarkup(job.riderFeeMinor, this.settings.get('failed_trip_uplift')) - job.riderFeeMinor;
-        if (uplift > 0) {
-          await tx.rider.update({ where: { id: job.riderId }, data: { pendingUpliftMinor: { increment: uplift } } });
+      /*
+       * Same rule as failed(): once per job.
+       *
+       * A job can reach here after already having been compensated — failed,
+       * resumed, and then the order cancelled underneath it — and paying twice
+       * for one wasted journey is the same fault wearing a different hat.
+       */
+      let recallUplift = 0;
+      if (
+        accepted &&
+        job.upliftGeneratedMinor === 0 &&
+        job.source === JobSource.MARKETPLACE &&
+        job.riderSource === RiderSource.POKBON &&
+        job.riderId
+      ) {
+        recallUplift = applyMarkup(job.riderFeeMinor, this.settings.get('failed_trip_uplift')) - job.riderFeeMinor;
+        if (recallUplift > 0) {
+          await tx.rider.update({ where: { id: job.riderId }, data: { pendingUpliftMinor: { increment: recallUplift } } });
         }
       }
 
       if (carrying) {
         const updated = await this.transition(tx, job, JobStatus.FAILED, `plugin:${actor}`, {
-          data: { failedAt: new Date(), failureReason: FailureReason.ORDER_CANCELLED, failureDetail: reason },
+          data: {
+            failedAt: new Date(),
+            failureReason: FailureReason.ORDER_CANCELLED,
+            failureDetail: reason,
+            ...(recallUplift > 0 ? { upliftGeneratedMinor: recallUplift } : {}),
+          },
           detail: { reason, recalled: true, byOrderCancellation: true },
           callbackExtra: { failureReason: FailureReason.ORDER_CANCELLED },
         });
@@ -666,7 +732,12 @@ export class JobsService {
       }
 
       const updated = await this.transition(tx, job, JobStatus.CANCELLED, `plugin:${actor}`, {
-        data: { cancelReason: reason, cancelledBy: actor, cancelledAt: new Date() },
+        data: {
+          cancelReason: reason,
+          cancelledBy: actor,
+          cancelledAt: new Date(),
+          ...(recallUplift > 0 ? { upliftGeneratedMinor: recallUplift } : {}),
+        },
         detail: { reason, byOrderCancellation: true },
       });
       return { job: updated, outcome: 'cancelled' as const };

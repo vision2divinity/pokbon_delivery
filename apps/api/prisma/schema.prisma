@@ -305,6 +305,13 @@ model Job {
   commissionFlatMinor Int @default(0) @map("commission_flat_minor")
   /// Failed-trip uplift paid on this job, if it consumed one (§ 11).
   upliftMinor Int @default(0) @map("uplift_minor")
+  /// Failed-trip uplift this job GENERATED, when it failed.
+  ///
+  /// Distinct from upliftMinor, which is what a job consumed on delivery. This
+  /// one exists so the credit can be made exactly once and taken back if the
+  /// job is later completed after all: FAILED -> EN_ROUTE -> FAILED is a legal
+  /// path, and without this each lap credited the rider again, for ever.
+  upliftGeneratedMinor Int @default(0) @map("uplift_generated_minor")
 
   rider            Rider?  @relation(fields: [riderId], references: [id])
   riderId          String? @db.Uuid @map("rider_id")
