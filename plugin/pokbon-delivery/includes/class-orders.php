@@ -538,6 +538,39 @@ class Pokbon_Delivery_Orders {
 	}
 
 	/**
+	 * The address a rider is actually given, landmark included.
+	 *
+	 * This used to be address line 1 plus the city, and dropped line 2 —
+	 * which the checkout labels "Apartment, suite, landmark (optional)". In a
+	 * market where "behind the blue kiosk at Madina" is the address, the
+	 * landmark is frequently the most useful line on the order, and it was
+	 * being thrown away on the way to the one person who needs it.
+	 *
+	 * It matters more now than it did: an order with no map pin is routed by
+	 * searching this text, so whatever is missing here is missing from the
+	 * rider's navigation too.
+	 */
+	private static function rider_address( $order ): string {
+		$parts = [
+			(string) $order->get_shipping_address_1(),
+			(string) $order->get_shipping_address_2(),
+			(string) $order->get_shipping_city(),
+		];
+		$address = trim( implode( ', ', array_filter( array_map( 'trim', $parts ), 'strlen' ) ) );
+
+		if ( $address === '' ) {
+			$parts   = [
+				(string) $order->get_billing_address_1(),
+				(string) $order->get_billing_address_2(),
+				(string) $order->get_billing_city(),
+			];
+			$address = trim( implode( ', ', array_filter( array_map( 'trim', $parts ), 'strlen' ) ) );
+		}
+
+		return $address;
+	}
+
+	/**
 	 * What this leg is worth, by the full three-rung ladder.
 	 *
 	 * One place, because two call sites asking the price of the same journey a
@@ -822,7 +855,7 @@ class Pokbon_Delivery_Orders {
 		return [
 			'lat'          => $lat,
 			'lng'          => $lng,
-			'address'      => trim( $order->get_shipping_address_1() . ' ' . $order->get_shipping_city() ) ?: $order->get_billing_address_1(),
+			'address'      => self::rider_address( $order ),
 			'zoneCode'     => $zone,
 			'ghanaPost'    => (string) $order->get_meta( self::META_GHANAPOST ),
 			'note'         => $note,

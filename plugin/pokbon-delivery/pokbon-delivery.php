@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.21
+ * Version:           0.5.22
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,15 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.22 (2026-09-24) — the landmark finally reaches the rider:
+ *   The rider's address was line 1 plus the city, and dropped line 2 — which
+ *   the checkout labels "Apartment, suite, landmark (optional)". In a market
+ *   where "behind the blue kiosk at Madina" IS the address, that is often the
+ *   most useful line on the order, and it was being thrown away on the way to
+ *   the only person who needs it.
+ *   It matters more than it did: an order with no map pin is now navigated by
+ *   searching this text, so anything missing here is missing from the rider's
+ *   route as well.
  * 0.5.21 (2026-09-24) — every real vendor's areas were missing from checkout:
  *   The area quote passed the collection point's zone CODE and nothing else,
  *   which silently removed the third rung of the ladder — distance needs
