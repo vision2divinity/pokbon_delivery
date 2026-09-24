@@ -52,6 +52,30 @@ Guarantees confirmed on the device, not just in code:
 
 ---
 
+## Where the code lives
+
+Three repositories, and one of them holds two plugins.
+
+| What | Path | Remote |
+|---|---|---|
+| Delivery API, rider app, shared package | `pokbon-delivery/` | `vision2divinity/pokbon_delivery` |
+| POKBON Delivery (WordPress) | `pokbon-delivery/plugin/pokbon-delivery/` | same repo |
+| **POKBON Checkout (WordPress)** | `pokbon-delivery/plugin/pokbon-checkout/` | same repo |
+| POKBON Mobile App + its WP plugin | `~/Downloads/pokbon_mobile_app/` | `vision2divinity/POKBON_Mobile_App` |
+
+**POKBON Checkout moved in on 2026-09-24.** It had lived in its own repo with
+no remote, so three commits had never left one laptop. It belongs beside
+POKBON Delivery because the two are ends of one mechanism — checkout asks
+`pokbon_delivery_coverage_required` and `pokbon_delivery_zone_areas`, delivery
+answers them, `pokbon_checkout_order_created` carries the area back — and the
+coverage gate needed an edit in both on the same afternoon.
+
+**The old `pokbon-checkout` directory beside this repo is now a stale copy.**
+It is byte-identical as of the move and must not be edited again. Delete it
+when you are confident, but do not work in it.
+
+---
+
 ## Running it
 
 Everything is local. Four things must be up.
