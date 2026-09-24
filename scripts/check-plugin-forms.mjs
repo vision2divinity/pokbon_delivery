@@ -81,8 +81,42 @@ for (const path of [...new Set(files)]) {
   }
 }
 
+/*
+ * Every control must also reach a handler.
+ *
+ * This has now happened three times: a button is written, it renders, it looks
+ * exactly right, and pressing it falls straight through the switch in
+ * class-admin.php and does nothing at all. The Payouts screen shipped with "I
+ * have paid this" wired to a case that did not exist — on the one screen where
+ * doing nothing means a rider is not paid and nobody finds out.
+ *
+ * A button that does nothing is worse than a missing one: somebody presses it,
+ * believes it worked, and moves on.
+ */
+{
+  const adminSrc = await readFile('plugin/pokbon-delivery/admin/class-admin.php', 'utf8');
+  const handled = new Set([...adminSrc.matchAll(/case\s+'([a-z0-9_]+)'\s*:/g)].map((m) => m[1]));
+
+  for (const path of [...new Set(files)]) {
+    const file = path.replace(/\\/g, '/').split('/').slice(-2).join('/');
+    const src = await readFile(path, 'utf8');
+    const actions = [
+      ...src.matchAll(/Pokbon_Delivery_Admin::(?:form_open|button)\s*\(\s*'([a-z0-9_]+)'/g),
+    ].map((m) => m[1]);
+
+    for (const action of new Set(actions)) {
+      if (!handled.has(action)) {
+        problems.push(
+          `${file}: renders a control for '${action}' and class-admin.php has no case for it — ` +
+            `pressing it does nothing, silently`,
+        );
+      }
+    }
+  }
+}
+
 if (problems.length) {
-  console.error('Nested or unclosed admin forms:\n');
+  console.error('Admin form problems:\n');
   for (const p of problems) console.error('  ' + p);
   console.error(`\n${problems.length} problem(s).`);
   process.exit(1);

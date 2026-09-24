@@ -476,6 +476,109 @@ class Pokbon_Delivery_Admin {
 				$notice = 'Code bypassed. The buyer is told this was confirmed by POKBON, not by code.';
 				break;
 
+			case 'save_vendor_pickup':
+				$vendor_id = (int) ( $_POST['vendor_id'] ?? 0 );
+				if ( $vendor_id <= 0 ) {
+					$error = 'No vendor.';
+					break;
+				}
+
+				if ( ! empty( $_POST['clear'] ) ) {
+					Pokbon_Delivery_Settings::save_vendor_pickup( $vendor_id, null );
+					$notice = 'Collection point cleared. This vendor falls back to their own pin, then to your default.';
+					break;
+				}
+
+				$pin = Pokbon_Delivery_Orders::parse_pin( (string) wp_unslash( $_POST['pin'] ?? '' ) );
+				if ( $pin === null ) {
+					$error = 'That does not look like a pin. Paste "5.6689, -0.1651" or a Google Maps link.';
+					break;
+				}
+
+				$pickup_phone = Pokbon_Delivery_Messages::normalise_ghana_phone(
+					(string) wp_unslash( $_POST['contact_phone'] ?? '' )
+				);
+				if ( $pickup_phone === '' ) {
+					// validate_pickup() would reject this silently and fall back
+					// to the default collection point, which is the failure this
+					// page exists to stop. Refused here, in words.
+					$error = 'A Ghana phone number is required: a collection point a rider cannot ring is one they cannot use.';
+					break;
+				}
+
+				$pickup_zone = Pokbon_Delivery_Geo::resolve_zone_code( $pin[0], $pin[1] );
+				if ( $pickup_zone === '' ) {
+					$error = 'That pin is outside every delivery zone you have set up, so nothing could price a route from it. Add a zone covering it first.';
+					break;
+				}
+
+				Pokbon_Delivery_Settings::save_vendor_pickup( $vendor_id, [
+					'lat'          => $pin[0],
+					'lng'          => $pin[1],
+					'address'      => sanitize_text_field( (string) wp_unslash( $_POST['address'] ?? '' ) ),
+					'contactName'  => (string) ( get_user_meta( $vendor_id, 'store_name', true ) ?: '' ),
+					'contactPhone' => $pickup_phone,
+				] );
+
+				Pokbon_Delivery_Audit::log( 'delivery.vendor_pickup_set', [
+					'vendor_id' => $vendor_id,
+					'zone'      => $pickup_zone,
+				] );
+				$notice = sprintf( 'Collection point saved. Riders will collect from zone %s.', $pickup_zone );
+				break;
+
+			case 'settle_payout':
+				$request_id = sanitize_text_field( (string) wp_unslash( $_POST['request_id'] ?? '' ) );
+				$amount     = (float) ( $_POST['amount'] ?? 0 );
+				$pay_note   = sanitize_text_field( (string) wp_unslash( $_POST['note'] ?? '' ) );
+
+				if ( $amount <= 0 ) {
+					$error = 'Enter what you actually sent the rider.';
+					break;
+				}
+
+				$result = Pokbon_Delivery_API_Client::settle_payout(
+					$request_id,
+					$amount,
+					wp_get_current_user()->user_login,
+					$pay_note
+				);
+				if ( is_wp_error( $result ) ) {
+					$error = $result->get_error_message();
+					break;
+				}
+
+				Pokbon_Delivery_Audit::log( 'delivery.payout_settled', [
+					'request_id' => $request_id,
+					'amount'     => $amount,
+				] );
+				$notice = sprintf(
+					'Recorded. The rider is owed %s less than before.',
+					Pokbon_Delivery_Settings::format( (int) round( $amount * 100 ) )
+				);
+				break;
+
+			case 'decline_payout':
+				$request_id = sanitize_text_field( (string) wp_unslash( $_POST['request_id'] ?? '' ) );
+				$pay_note   = sanitize_text_field( (string) wp_unslash( $_POST['note'] ?? '' ) );
+
+				if ( strlen( trim( $pay_note ) ) < 5 ) {
+					$error = 'Say why. The rider reads this, and "no" on its own is not something they can act on.';
+					break;
+				}
+
+				$result = Pokbon_Delivery_API_Client::decline_payout(
+					$request_id,
+					wp_get_current_user()->user_login,
+					$pay_note
+				);
+				if ( is_wp_error( $result ) ) {
+					$error = $result->get_error_message();
+					break;
+				}
+				$notice = 'Declined, with your reason recorded against it.';
+				break;
+
 			case 'return_job':
 				$job_id = sanitize_text_field( (string) wp_unslash( $_POST['job_id'] ?? '' ) );
 				$reason = sanitize_text_field( (string) wp_unslash( $_POST['reason'] ?? '' ) );

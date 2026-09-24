@@ -29,6 +29,8 @@ class Pokbon_Delivery_Settings {
 	const OPT_BANDS      = 'pokbon_delivery_bands';
 	const OPT_BAND_PRICES = 'pokbon_delivery_band_prices';
 	const OPT_DISTANCE   = 'pokbon_delivery_distance_bands';
+	/** Collection points POKBON has set by hand, keyed by vendor id. */
+	const OPT_VENDOR_PICKUPS = 'pokbon_delivery_vendor_pickups';
 
 	/**
 	 * Launch defaults. Mirrors packages/shared/src/settings.ts in the API, and
@@ -381,6 +383,36 @@ class Pokbon_Delivery_Settings {
 		}
 		$prices[ $key ]['active'] = $active;
 		update_option( self::OPT_BAND_PRICES, $prices, false );
+		self::mark_dirty();
+	}
+
+	/**
+	 * Every collection point POKBON has set by hand.
+	 *
+	 * Keyed by vendor id. These beat a vendor's own WCFM pin, deliberately:
+	 * somebody at POKBON put this here after looking at a map, which is a
+	 * stronger claim than a field a vendor may have left at its default.
+	 */
+	public static function vendor_pickups(): array {
+		$rows = get_option( self::OPT_VENDOR_PICKUPS, [] );
+		return is_array( $rows ) ? $rows : [];
+	}
+
+	/** One vendor's, or null. */
+	public static function vendor_pickup( int $vendor_id ): ?array {
+		$rows = self::vendor_pickups();
+		return isset( $rows[ $vendor_id ] ) && is_array( $rows[ $vendor_id ] ) ? $rows[ $vendor_id ] : null;
+	}
+
+	/** Set or clear one. Passing null removes it, so a mistake can be undone. */
+	public static function save_vendor_pickup( int $vendor_id, ?array $pickup ): void {
+		$rows = self::vendor_pickups();
+		if ( $pickup === null ) {
+			unset( $rows[ $vendor_id ] );
+		} else {
+			$rows[ $vendor_id ] = $pickup;
+		}
+		update_option( self::OPT_VENDOR_PICKUPS, $rows, false );
 		self::mark_dirty();
 	}
 

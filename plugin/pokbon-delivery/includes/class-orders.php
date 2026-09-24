@@ -39,6 +39,17 @@ class Pokbon_Delivery_Orders {
 	const META_DISPATCH_ZONE = '_pokbon_delivery_dispatch_zone';
 
 	public static function bootstrap(): void {
+		/*
+		 * POKBON's own collection point for a vendor, answered on the rung that
+		 * already existed for exactly this.
+		 *
+		 * It sits above the vendor's WCFM pin on purpose. Somebody here looked
+		 * at a map and decided; a vendor's own field may never have been
+		 * touched, and most have not been. An address is not a location, and
+		 * this is where the two are reconciled by a human rather than guessed.
+		 */
+		add_filter( 'pokbon_delivery_vendor_pickup', [ self::class, 'configured_pickup' ], 10, 2 );
+
 		add_action( 'woocommerce_order_status_processing', [ self::class, 'on_processing' ], 20, 1 );
 		/*
 		 * An order that is called off must not leave a rider riding to it.
@@ -898,6 +909,34 @@ class Pokbon_Delivery_Orders {
 	}
 
 	/**
+	 * A collection point somebody at POKBON set for this vendor.
+	 *
+	 * Returns the candidate shape validate_pickup() expects, or $current when
+	 * there is nothing set — so the rest of the chain is untouched and a vendor
+	 * nobody has got to yet behaves exactly as before.
+	 */
+	public static function configured_pickup( $current, $vendor_id ) {
+		$row = Pokbon_Delivery_Settings::vendor_pickup( (int) $vendor_id );
+		if ( $row === null ) {
+			return $current;
+		}
+
+		$lat = (float) ( $row['lat'] ?? 0 );
+		$lng = (float) ( $row['lng'] ?? 0 );
+		if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
+			return $current; // Saved without a pin; not a location.
+		}
+
+		return [
+			'lat'          => $lat,
+			'lng'          => $lng,
+			'address'      => (string) ( $row['address'] ?? '' ),
+			'contactName'  => (string) ( $row['contactName'] ?? '' ),
+			'contactPhone' => (string) ( $row['contactPhone'] ?? '' ),
+		];
+	}
+
+	/**
 	 * The whole collection point, coordinates and all.
 	 *
 	 * pickup_zone_for_vendor() throws away the latitude and longitude, and a
@@ -908,6 +947,62 @@ class Pokbon_Delivery_Orders {
 	 */
 	public static function pickup_for_vendor( $vendor_id ): ?array {
 		return self::pickup_for( $vendor_id, null );
+	}
+
+	/**
+	 * Where this vendor's collection point comes from, and why.
+	 *
+	 * For the admin screen, so it can say which rung answered rather than
+	 * showing a plausible address and leaving somebody to assume it is the
+	 * vendor's. The whole class of bug this project keeps meeting is a
+	 * believable wrong answer; naming the source is the cheapest defence.
+	 *
+	 * @return array{pickup:?array,source:string,why:string}
+	 */
+	public static function pickup_diagnosis( $vendor_id ): array {
+		$found = self::resolve_pickup( (int) $vendor_id, null );
+		if ( $found === null ) {
+			return [ 'pickup' => null, 'source' => 'none', 'why' => 'nothing could be resolved at all' ];
+		}
+		return $found;
+	}
+
+	/**
+	 * Read a pin out of whatever somebody pasted.
+	 *
+	 * People do not type coordinates. They copy a Google Maps link, or the
+	 * "5.6689, -0.1651" string Maps shows when you long-press a spot. Both are
+	 * accepted, because the alternative is two number boxes and somebody
+	 * transposing a sign.
+	 *
+	 * @return array{0:float,1:float}|null
+	 */
+	public static function parse_pin( string $raw ): ?array {
+		$raw = trim( $raw );
+		if ( $raw === '' ) {
+			return null;
+		}
+
+		// A Google Maps URL: .../@5.6689,-0.1651,17z  or  ?q=5.6689,-0.1651
+		if ( preg_match( '/[@=\/](-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/', $raw, $m ) ) {
+			$lat = (float) $m[1];
+			$lng = (float) $m[2];
+		} elseif ( preg_match( '/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/', $raw, $m ) ) {
+			$lat = (float) $m[1];
+			$lng = (float) $m[2];
+		} else {
+			return null;
+		}
+
+		if ( $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 ) {
+			return null;
+		}
+		// Null island is what an empty or half-pasted value looks like.
+		if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
+			return null;
+		}
+
+		return [ $lat, $lng ];
 	}
 
 	private static function pickup_for( $vendor_id, $order ): ?array {

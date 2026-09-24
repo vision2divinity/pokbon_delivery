@@ -83,7 +83,7 @@ add a changelog entry in the same header, run the checks below, zip the
 ### The checks, all of which must pass
 
 ```bash
-node scripts/check-plugin-forms.mjs      # no nested or unclosed admin forms
+node scripts/check-plugin-forms.mjs      # no nested forms; every button reaches a handler
 node scripts/check-plugin-php-traps.mjs  # PHP idioms that have each cost a live bug
 node scripts/check-price-ladder.mjs      # the three-rung ladder
 node scripts/check-price-parity.mjs      # PHP and TypeScript price identically
@@ -408,6 +408,36 @@ Kept with their evidence, so none of this gets re-investigated.
   Now mirrors `WC_Gateway_COD`, last in `create_order()` so the fee is re-priced
   and the area stamped first. Proven end to end on **#87692**, placed from the
   app, cash on delivery, run to Completed with nothing pushed by hand.
+- **The rider was sent to the wrong shop** — closed in Delivery 0.5.23.
+  A vendor's address exists in three places (billing details, what they typed at
+  registration, a profile somebody filled in for them) and *none of them holds
+  coordinates*, so a vendor who never dropped a pin in the WCFM store manager
+  fell through to POKBON's own default collection point. The rider was then sent,
+  confidently, to the wrong business — with a real address and a real phone
+  number belonging to somebody else. **Admin → POKBON Delivery → Collection
+  points** now lists every vendor with a published product, says in words which
+  rung is answering for them today (your pin / their own WCFM pin / a configured
+  pickup point / **your default — wrong shop**), and takes a Google Maps pin,
+  address and phone per vendor. Stored in `OPT_VENDOR_PICKUPS`, served through
+  the pre-existing `pokbon_delivery_vendor_pickup` filter by
+  `Orders::configured_pickup()`, which sits **above** the vendor's own pin on
+  purpose: a person here decided, and a field a vendor never touched did not.
+  The pin parser takes `5.6689, -0.1651` or a whole Maps URL, and rejects `0,0`.
+  This replaces logging into a vendor's account to set it for them.
+- **Refusing a delivery and quoting a price for it at the same time** — closed in
+  Checkout 1.3.1. With the coverage gate on, an unserved region showed "We do not
+  deliver to this area yet" above a shipping line reading GH¢100.00 and a button
+  reading "· GH¢101.00". A buyer believes the number. `compute()` now blanks the
+  line ("Not available") and the totals when `refusing` is set. The same edit
+  moved the gate out of `if (noCoverageEl)`: a template missing that one `<p>`
+  would have taken the order at the flat rate with nothing to show for it.
+- **Buttons wired to nothing** — `scripts/check-plugin-forms.mjs` now also
+  asserts that every `form_open()` / `button()` action has a matching `case` in
+  `class-admin.php`. This had happened three times; most recently the Payouts
+  screen shipped with **"I have paid this" wired to a case that did not exist**,
+  on the one screen where doing nothing means a rider is not paid. 25 controls,
+  25 handlers, checked on every run.
+
 - **Keyboard covering the rider's inputs; content under the navigation bar** —
   `KeyboardAvoidingView` and `SafeAreaView edges={['top','bottom']}` in
   `apps/mobile/components/ui.tsx`. Not separately confirmed on the device, but
