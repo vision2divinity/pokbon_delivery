@@ -62,6 +62,8 @@ export function toRiderJobView(job: Job, extras: { photos?: JobPhoto[] } = {}) {
       contactName: job.pickupContactName,
       contactPhone: job.pickupContactPhone,
       note: job.pickupNote,
+      /** False: lat/lng are a zone centre. Navigate by address, not by point. */
+      pinned: job.pickupPinned,
     },
     dropoff: {
       lat: job.dropoffLat,

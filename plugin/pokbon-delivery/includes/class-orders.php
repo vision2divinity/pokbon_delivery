@@ -1026,30 +1026,78 @@ class Pokbon_Delivery_Orders {
 	}
 
 	/**
-	 * A collection point somebody at POKBON set for this vendor.
+	 * What somebody at POKBON set for this vendor, laid OVER what the vendor set.
 	 *
-	 * Returns the candidate shape validate_pickup() expects, or $current when
-	 * there is nothing set — so the rest of the chain is untouched and a vendor
-	 * nobody has got to yet behaves exactly as before.
+	 * An override, field by field, not a replacement. That distinction is the
+	 * whole usefulness of the screen: a vendor may have dropped a perfectly good
+	 * pin in their WCFM dashboard and still be undispatchable because their
+	 * store has no phone, or because their shop sits outside every zone. Before
+	 * this, fixing the one missing field meant re-entering all of them, and
+	 * saving without a pin did nothing at all.
+	 *
+	 * So each field falls through in turn: POKBON's, then the vendor's own, then
+	 * empty. Setting only a zone keeps their pin for navigation; setting only a
+	 * pin keeps their phone. Whatever is typed here wins over the dashboard,
+	 * because a person here looked at a map and decided, and a field a vendor
+	 * never touched did not.
 	 */
 	public static function configured_pickup( $current, $vendor_id ) {
 		$row = Pokbon_Delivery_Settings::vendor_pickup( (int) $vendor_id );
-		if ( $row === null ) {
+		if ( ! is_array( $row ) || $row === [] ) {
 			return $current;
 		}
 
-		$lat = (float) ( $row['lat'] ?? 0 );
-		$lng = (float) ( $row['lng'] ?? 0 );
-		if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
-			return $current; // Saved without a pin; not a location.
+		// Their own store profile, as the thing being overridden. $current is
+		// whatever an earlier filter supplied and is respected above it.
+		$theirs = is_array( $current ) ? $current : ( self::vendor_store_pickup( (int) $vendor_id ) ?? [] );
+
+		$pick = static function ( string $key ) use ( $row, $theirs ) {
+			$mine = $row[ $key ] ?? null;
+			if ( $mine !== null && $mine !== '' ) {
+				return $mine;
+			}
+			return $theirs[ $key ] ?? '';
+		};
+
+		$lat = (float) $pick( 'lat' );
+		$lng = (float) $pick( 'lng' );
+
+		/*
+		 * A zone with no pin anywhere still dispatches.
+		 *
+		 * The zone's own centre stands in for coordinates, which is enough to
+		 * price the route and offer the job to riders working nearby. It is NOT
+		 * enough to ride to, so it is flagged: `pinned` false travels with the
+		 * job and the rider's app searches the address instead of steering them
+		 * to the middle of a suburb. A fallback that does not announce itself is
+		 * how a rider ends up confidently at the wrong place.
+		 */
+		$pinned = ! ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 );
+		$zone   = strtoupper( (string) $pick( 'zoneCode' ) );
+
+		if ( ! $pinned ) {
+			if ( $zone === '' ) {
+				return $current; // Nothing here locates anybody.
+			}
+			$centre = Pokbon_Delivery_Settings::zone( $zone );
+			if ( ! is_array( $centre ) ) {
+				return $current;
+			}
+			$lat = (float) ( $centre['lat'] ?? 0 );
+			$lng = (float) ( $centre['lng'] ?? 0 );
+			if ( abs( $lat ) < 0.0001 && abs( $lng ) < 0.0001 ) {
+				return $current;
+			}
 		}
 
 		return [
 			'lat'          => $lat,
 			'lng'          => $lng,
-			'address'      => (string) ( $row['address'] ?? '' ),
-			'contactName'  => (string) ( $row['contactName'] ?? '' ),
-			'contactPhone' => (string) ( $row['contactPhone'] ?? '' ),
+			'zoneCode'     => $zone,
+			'pinned'       => $pinned,
+			'address'      => (string) $pick( 'address' ),
+			'contactName'  => (string) $pick( 'contactName' ),
+			'contactPhone' => (string) $pick( 'contactPhone' ),
 		];
 	}
 
@@ -1189,10 +1237,9 @@ class Pokbon_Delivery_Orders {
 			return 'their store has no map pin, so a rider cannot be routed to it';
 		}
 		if ( Pokbon_Delivery_Geo::resolve_zone_code( $lat, $lng ) === '' ) {
-			return 'their store sits outside every delivery zone you have set up';
-		}
-		if ( Pokbon_Delivery_Messages::normalise_ghana_phone( (string) ( $candidate['contactPhone'] ?? '' ) ) === '' ) {
-			return 'their store has no usable Ghana phone number for the rider to call';
+			// Fixable from Collection points without touching their dashboard:
+			// name the zone and the pin is accepted as it stands.
+			return 'their store sits outside every delivery zone you have set up — give them a zone on this screen, or add a zone covering their pin';
 		}
 
 		return 'their store details could not be used';
@@ -1222,9 +1269,25 @@ class Pokbon_Delivery_Orders {
 			return null; // Collection point outside every coverage area.
 		}
 
+		/*
+		 * A missing phone number no longer throws the whole collection point away.
+		 *
+		 * It used to. A vendor with a perfectly good map pin, whose WCFM store
+		 * simply had no phone in it, was discarded here in silence and their
+		 * parcels were collected from POKBON's own shop instead — the rider sent
+		 * to the wrong business over a blank field. That is a far worse outcome
+		 * than a rider who has to ring the office.
+		 *
+		 * So it falls through to POKBON's own number, which is a number somebody
+		 * answers and which can reach the vendor. Only a collection point with
+		 * no reachable number ANYWHERE is refused, and by then the default has
+		 * none either, so nothing would have worked regardless.
+		 */
 		$phone = Pokbon_Delivery_Messages::normalise_ghana_phone( (string) ( $candidate['contactPhone'] ?? '' ) );
 		if ( $phone === '' ) {
-			return null;
+			$phone = Pokbon_Delivery_Messages::normalise_ghana_phone(
+				(string) Pokbon_Delivery_Settings::get( 'default_pickup_phone' )
+			);
 		}
 
 		return [
@@ -1232,6 +1295,14 @@ class Pokbon_Delivery_Orders {
 			'lng'          => $lng,
 			'address'      => sanitize_text_field( (string) ( $candidate['address'] ?? '' ) ),
 			'zoneCode'     => $zone,
+			/*
+			 * False when the coordinates are a zone centre rather than somewhere
+			 * a person actually pointed at. It rides with the job so the rider's
+			 * app searches the address instead of steering into the middle of a
+			 * suburb — the same flag the drop-off already carries, for the same
+			 * reason.
+			 */
+			'pinned'       => ! array_key_exists( 'pinned', $candidate ) || (bool) $candidate['pinned'],
 			'note'         => sanitize_text_field( (string) ( $candidate['note'] ?? '' ) ),
 			'contactName'  => sanitize_text_field( (string) ( $candidate['contactName'] ?? '' ) ),
 			'contactPhone' => $phone,

@@ -159,6 +159,7 @@ export class JobsService {
           pickupContactName: input.pickup.contactName,
           pickupContactPhone: input.pickup.contactPhone,
           pickupNote: input.pickup.note ?? null,
+          pickupPinned: input.pickup.pinned,
           dropoffLat: input.dropoff.lat,
           dropoffLng: input.dropoff.lng,
           dropoffAddress: input.dropoff.address,

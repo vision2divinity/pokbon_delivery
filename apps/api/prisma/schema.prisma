@@ -262,6 +262,8 @@ model Job {
   /// Free text from whoever booked it: how to find the collection point, who
   /// to ask for, which gate. The rider sees it; it is not used for routing.
   pickupNote         String? @map("pickup_note")
+  /// False when pickupLat/Lng are a zone centre rather than a real pin.
+  pickupPinned       Boolean @default(true) @map("pickup_pinned")
 
   dropoffLat          Float   @map("dropoff_lat")
   dropoffLng          Float   @map("dropoff_lng")

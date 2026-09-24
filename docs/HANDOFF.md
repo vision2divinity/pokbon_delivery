@@ -317,6 +317,11 @@ human, and retrying it for ever would hide that rather than surface it.
 
 To be built after the loophole backlog. All of it managed from the plugin.
 
+**Done so far, 2026-09-24 (Delivery 0.5.26):** item 7 in part — a Details form
+on the rider's screen edits name, base zone, vehicle, registration, licence,
+MoMo number and next of kin without touching their status, and their onboarding
+documents were already listed there. Items 1-6 and 8-10 remain.
+
 1. Average delivery speed.
 2. Job acceptance speed — how quickly they answer an offer.
 3. Orders and requests they have had.
@@ -409,6 +414,37 @@ Kept with their evidence, so none of this gets re-investigated.
   Now mirrors `WC_Gateway_COD`, last in `create_order()` so the fee is re-priced
   and the area stamped first. Proven end to end on **#87692**, placed from the
   app, cash on delivery, run to Completed with nothing pushed by hand.
+- **A vendor can be given a zone, and it overrides their dashboard** — Delivery
+  0.5.26. Collection points demanded a pin, then a phone, then a zone the pin
+  happened to fall inside, and refused the save if any were missing — so the
+  screen built to stop vendors falling back to the default collection point
+  would not let you rescue the vendors who most needed it. Every field is an
+  override now: fill in what you know, leave the rest blank, and what is blank
+  falls through to the vendor's own WCFM profile field by field. Setting only a
+  zone keeps their pin for navigation; setting only a pin keeps their phone.
+  **A zone on its own is enough to price and dispatch** — the zone centre stands
+  in for coordinates and the job carries `pickup.pinned = false`, so the rider's
+  app searches for the shop by name instead of riding into the middle of a
+  suburb. A missing phone no longer throws the collection point away; it falls
+  through to POKBON's own number, because a rider who has to ring the office is
+  a far better outcome than a rider sent to the wrong business over a blank
+  field. `pickupPinned` is new on the job, mirroring `dropoffPinned`.
+- **The rider had no way to navigate to the collection point** — Delivery
+  0.5.26 / app. Every job begins by getting to a shop the rider has usually
+  never seen, and the screen offered one line of text to retype into another app
+  while sitting on a bike. Call the shop and Navigate now sit under "Collect
+  from", and `navigationUrl()` takes either end — searching the shop's name and
+  address when the pickup is not pinned, exactly as the drop-off already did.
+- **A rider's details could be typed once and never again** — Delivery 0.5.26.
+  Base zone, vehicle, registration, licence, MoMo number and next of kin were
+  settable only on the add form, so a rider who moved across town went on being
+  offered work in the zone they left. There is a Details form on the rider's own
+  screen now. It deliberately does not touch their status: `add_rider` defaults
+  status to APPROVED and leaves DRAFT when a box is unticked, so reusing that
+  path to fix a registration plate would have approved a rider still waiting on
+  their documents, or demoted an approved one, as a side effect of a typo. The
+  upsert schema takes `status: UNCHANGED` for exactly this.
+  Their onboarding documents (selfie, ID, licence) were already on that screen.
 - **Three riders, three prompts, one order** — closed in Delivery 0.5.25.
   `codAmount` was `$order->get_total()` written to every job, and the doorstep
   charge in `class-payments.php` raised a Paystack prompt for the whole order

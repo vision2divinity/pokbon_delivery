@@ -62,20 +62,34 @@ const NOTE_REQUIRED: readonly FailureReasonValue[] = ['OTHER'];
  * the GhanaPostGPS code first when there is one because it is the most precise
  * thing on a Ghanaian order.
  */
-function navigationUrl(dropoff: RiderJob['dropoff']): string {
-  const pinned = (dropoff as { pinned?: boolean }).pinned !== false;
+type Place = {
+  lat: number;
+  lng: number;
+  address: string;
+  ghanaPost?: string | null;
+  pinned?: boolean;
+  contactName?: string | null;
+};
+
+function navigationUrl(place: Place): string {
+  const pinned = place.pinned !== false;
   if (pinned) {
-    return `geo:${dropoff.lat},${dropoff.lng}?q=${dropoff.lat},${dropoff.lng}`;
+    return `geo:${place.lat},${place.lng}?q=${place.lat},${place.lng}`;
   }
 
-  const ghanaPost = (dropoff as { ghanaPost?: string | null }).ghanaPost ?? '';
-  const query = [ghanaPost, dropoff.address].map((p) => (p ?? '').trim()).filter(Boolean).join(', ');
+  const ghanaPost = place.ghanaPost ?? '';
+  // The shop's name is worth searching for at a collection point, where the
+  // address is often a district and the business is what is on the signboard.
+  const query = [ghanaPost, place.contactName, place.address]
+    .map((p) => (p ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
 
   // Fall back to the zone centre only when there is no address at all to
   // search for — at that point an approximate area genuinely is the best
   // information anyone has.
   if (query === '') {
-    return `geo:${dropoff.lat},${dropoff.lng}?q=${dropoff.lat},${dropoff.lng}`;
+    return `geo:${place.lat},${place.lng}?q=${place.lat},${place.lng}`;
   }
 
   // geo:0,0?q=<text> is the documented way to ask the maps app to search
@@ -277,6 +291,28 @@ export default function JobScreen() {
         />
         <Field label="Collect from" value={job.pickup.address} />
         {job.pickup.note ? <Field label="Collection note" value={job.pickup.note} /> : null}
+        {/*
+          The collection point had an address and no way to navigate to it.
+          Every job starts by getting to a shop the rider has usually never
+          been to, and the only help on this screen was a line of text to
+          retype into another app while sitting on a bike.
+        */}
+        <Row>
+          <View style={{ flex: 1 }}>
+            <Button
+              title="Call the shop"
+              kind="secondary"
+              onPress={() => void Linking.openURL(`tel:${job.pickup.contactPhone}`)}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              title="Navigate"
+              kind="secondary"
+              onPress={() => void Linking.openURL(navigationUrl(job.pickup))}
+            />
+          </View>
+        </Row>
       </Card>
 
       <Card>

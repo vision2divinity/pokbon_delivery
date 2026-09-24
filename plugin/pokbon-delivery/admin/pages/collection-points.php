@@ -41,15 +41,24 @@ $configured = Pokbon_Delivery_Settings::vendor_pickups();
 	<h1>Collection points</h1>
 
 	<p class="description" style="max-width:62em">
-		Where a rider goes to collect each vendor&rsquo;s parcels. Paste a pin from Google Maps &mdash;
-		either the <code>5.6689, -0.1651</code> that appears when you long-press a spot, or the whole
-		link from the address bar. Both work.
+		Where a rider goes to collect each vendor&rsquo;s parcels. <strong>Everything here is an
+		override</strong> &mdash; fill in what you know and leave the rest blank. Whatever you set wins
+		over what the vendor put in their WCFM dashboard; whatever you leave blank falls through to
+		their own profile, field by field.
 	</p>
 	<p class="description" style="max-width:62em">
-		<strong>A vendor with no pin anywhere is collected from your default collection point</strong>,
-		which means a rider is sent to your shop for their goods. That still happens rather than
-		blocking the order, and the order gets a note saying so &mdash; but the rider has already set
-		off by then, so it is worth settling here first.
+		<strong>The zone is the important one.</strong> It is what prices the route and decides which
+		riders are offered the job, and you can set it on its own &mdash; a vendor with a zone and no
+		pin is dispatched from the middle of that zone, and the rider&rsquo;s app is told to search for
+		the shop by name rather than ride to the middle of a suburb. The pin is for navigation: paste
+		the <code>5.6689, -0.1651</code> Google Maps shows when you long-press a spot, or the whole
+		link from the address bar.
+	</p>
+	<p class="description" style="max-width:62em">
+		<strong>A vendor with nothing here and nothing in their dashboard is collected from your
+		default collection point</strong>, which means a rider is sent to your shop for their goods.
+		That still happens rather than blocking the order, and the order gets a note saying so &mdash;
+		but the rider has already set off by then, so it is worth settling here first.
 	</p>
 
 	<?php if ( empty( $vendor_ids ) ) : ?>
@@ -117,34 +126,65 @@ $configured = Pokbon_Delivery_Settings::vendor_pickups();
 						if ( ! empty( $diag['pickup']['zoneCode'] ) ) {
 							echo '<br><span class="description">Zone ' . esc_html( $diag['pickup']['zoneCode'] ) . '</span>';
 						}
+						// A zone with no pin is dispatchable and not navigable.
+						// Saying so here is the difference between a rider who
+						// searches for the shop and one who rides into a field.
+						if ( is_array( $diag['pickup'] ) && isset( $diag['pickup']['pinned'] ) && ! $diag['pickup']['pinned'] ) {
+							echo '<br><span class="description" style="color:#996800">Zone centre, not a pin &mdash;'
+								. ' the rider searches for the shop by name.</span>';
+						}
 						?>
 					</td>
 					<td>
 						<?php Pokbon_Delivery_Admin::form_open( 'save_vendor_pickup' ); ?>
 							<input type="hidden" name="vendor_id" value="<?php echo (int) $vendor_id; ?>">
 							<p style="margin:0 0 .4em">
-								<input type="text" name="pin" class="regular-text" style="width:24em"
-									placeholder="5.6689, -0.1651 or a Google Maps link"
+								<label style="display:inline-block;width:5em">Zone</label>
+								<select name="zone_code">
+									<option value="">&mdash; work it out from the pin &mdash;</option>
+									<?php
+									$chosen_zone = strtoupper( (string) ( $row['zoneCode'] ?? '' ) );
+									foreach ( Pokbon_Delivery_Settings::active_zones() as $zone ) :
+										?>
+										<option value="<?php echo esc_attr( $zone['code'] ); ?>"
+											<?php selected( $chosen_zone, strtoupper( (string) $zone['code'] ) ); ?>>
+											<?php echo esc_html( $zone['name'] . ' (' . $zone['code'] . ')' ); ?>
+										</option>
+									<?php endforeach; ?>
+								</select>
+							</p>
+							<p style="margin:0 0 .4em">
+								<label style="display:inline-block;width:5em">Pin</label>
+								<input type="text" name="pin" class="regular-text" style="width:22em"
+									placeholder="5.6689, -0.1651 or a Google Maps link — optional"
 									value="<?php echo $hasPin ? esc_attr( $row['lat'] . ', ' . $row['lng'] ) : ''; ?>">
 							</p>
 							<p style="margin:0 0 .4em">
-								<input type="text" name="address" class="regular-text" style="width:24em"
+								<label style="display:inline-block;width:5em">Address</label>
+								<input type="text" name="address" class="regular-text" style="width:22em"
 									placeholder="What the rider should read"
-									value="<?php echo esc_attr( (string) ( $row['address'] ?? $hint ) ); ?>">
+									value="<?php echo esc_attr( (string) ( $row['address'] ?? '' ) ); ?>">
 							</p>
 							<p style="margin:0 0 .4em">
+								<label style="display:inline-block;width:5em">Phone</label>
 								<input type="text" name="contact_phone" class="regular-text" style="width:12em"
 									placeholder="Phone at the shop"
-									value="<?php echo esc_attr( (string) ( $row['contactPhone'] ?? get_user_meta( $vendor_id, 'billing_phone', true ) ) ); ?>">
+									value="<?php echo esc_attr( (string) ( $row['contactPhone'] ?? '' ) ); ?>">
+							</p>
+							<p style="margin:0">
 								<button type="submit" class="button button-primary">Save</button>
-								<?php if ( $hasPin ) : ?>
-									<button type="submit" name="clear" value="1" class="button">Clear</button>
+								<?php if ( is_array( $row ) && $row !== [] ) : ?>
+									<button type="submit" name="clear" value="1" class="button">Clear my overrides</button>
 								<?php endif; ?>
 							</p>
 						</form>
-						<p class="description" style="margin:0">
-							A phone is required &mdash; a collection point a rider cannot ring is one they
-							cannot use when the shutter is down.
+						<p class="description" style="margin:.4em 0 0">
+							<?php if ( $hint !== '' ) : ?>
+								Blank means &ldquo;use theirs&rdquo;. They registered:
+								<em><?php echo esc_html( $hint ); ?></em>
+							<?php else : ?>
+								Blank means &ldquo;use theirs&rdquo;.
+							<?php endif; ?>
 						</p>
 					</td>
 				</tr>

@@ -341,6 +341,59 @@ class Pokbon_Delivery_Admin {
 				}
 				break;
 
+			case 'edit_rider':
+				/*
+				 * The same upsert as add_rider, minus the two things that make
+				 * it a decision.
+				 *
+				 * `status` goes as UNCHANGED, because add_rider defaults it to
+				 * APPROVED and leaves DRAFT when a box is unticked — so reusing
+				 * that path to fix a registration plate would have approved a
+				 * rider still waiting on their documents, or demoted an approved
+				 * one, as a side effect. And the agreement is not touched at
+				 * all: nobody signs anything by having their zone corrected.
+				 */
+				$edit_phone = trim( (string) wp_unslash( $_POST['phone'] ?? '' ) );
+				$edit_name  = trim( (string) wp_unslash( $_POST['full_name'] ?? '' ) );
+				if ( $edit_phone === '' || $edit_name === '' ) {
+					$error = 'A rider needs at least a name and a phone number.';
+					break;
+				}
+
+				$edit = array_filter(
+					[
+						'vehicleRegistration' => sanitize_text_field( (string) wp_unslash( $_POST['vehicle_registration'] ?? '' ) ),
+						'baseZoneCode'        => strtoupper( sanitize_key( (string) wp_unslash( $_POST['base_zone'] ?? '' ) ) ),
+						'momoNumber'          => trim( (string) wp_unslash( $_POST['momo_number'] ?? '' ) ),
+						'licenceNumber'       => sanitize_text_field( (string) wp_unslash( $_POST['licence_number'] ?? '' ) ),
+						'nextOfKinName'       => sanitize_text_field( (string) wp_unslash( $_POST['next_of_kin_name'] ?? '' ) ),
+						'nextOfKinPhone'      => trim( (string) wp_unslash( $_POST['next_of_kin_phone'] ?? '' ) ),
+					],
+					static function ( $v ) {
+						return $v !== '' && $v !== null;
+					}
+				);
+
+				$edit['phone']        = $edit_phone;
+				$edit['fullName']     = sanitize_text_field( $edit_name );
+				$edit['vehicleClass'] = strtoupper( sanitize_key( (string) wp_unslash( $_POST['vehicle_class'] ?? 'MOTORBIKE' ) ) );
+				$edit['status']       = 'UNCHANGED';
+				$edit['actor']        = wp_get_current_user()->user_login;
+
+				$edited = Pokbon_Delivery_API_Client::upsert_rider( $edit );
+				if ( is_wp_error( $edited ) ) {
+					$error = $edited->get_error_message();
+					break;
+				}
+
+				Pokbon_Delivery_Audit::log( 'delivery.rider_edited', [
+					'rider_id' => sanitize_text_field( (string) wp_unslash( $_POST['rider_id'] ?? '' ) ),
+					'fields'   => array_keys( $edit ),
+					'actor'    => wp_get_current_user()->user_login,
+				] );
+				$notice = 'Details saved. Their status is unchanged.';
+				break;
+
 			case 'add_rider':
 				$phone = trim( (string) wp_unslash( $_POST['phone'] ?? '' ) );
 				$name  = trim( (string) wp_unslash( $_POST['full_name'] ?? '' ) );
@@ -501,42 +554,81 @@ class Pokbon_Delivery_Admin {
 					break;
 				}
 
-				$pin = Pokbon_Delivery_Orders::parse_pin( (string) wp_unslash( $_POST['pin'] ?? '' ) );
-				if ( $pin === null ) {
-					$error = 'That does not look like a pin. Paste "5.6689, -0.1651" or a Google Maps link.';
+				/*
+				 * Every field is optional, and whatever is given wins.
+				 *
+				 * This used to demand a pin, then a phone, then a zone the pin
+				 * fell inside, and refuse the save if any were missing. So the
+				 * screen built to stop vendors falling back to the default
+				 * collection point would not let you rescue the vendors who
+				 * most needed it — the one with a shop outside every zone, the
+				 * one whose store profile has no phone.
+				 *
+				 * It is a set of overrides now. Fill in what you know. A zone on
+				 * its own is enough to price and dispatch; a pin on its own is
+				 * enough to navigate; anything left blank falls through to the
+				 * vendor's own store profile exactly as before.
+				 */
+				$pin_raw = trim( (string) wp_unslash( $_POST['pin'] ?? '' ) );
+				$pin     = $pin_raw === '' ? null : Pokbon_Delivery_Orders::parse_pin( $pin_raw );
+				if ( $pin_raw !== '' && $pin === null ) {
+					$error = 'That does not look like a pin. Paste "5.6689, -0.1651" or a Google Maps link, or leave it blank.';
 					break;
 				}
 
 				$pickup_phone = Pokbon_Delivery_Messages::normalise_ghana_phone(
 					(string) wp_unslash( $_POST['contact_phone'] ?? '' )
 				);
-				if ( $pickup_phone === '' ) {
-					// validate_pickup() would reject this silently and fall back
-					// to the default collection point, which is the failure this
-					// page exists to stop. Refused here, in words.
-					$error = 'A Ghana phone number is required: a collection point a rider cannot ring is one they cannot use.';
+
+				$pickup_zone = strtoupper( sanitize_key( (string) wp_unslash( $_POST['zone_code'] ?? '' ) ) );
+				if ( $pickup_zone !== '' && ! Pokbon_Delivery_Settings::zone( $pickup_zone ) ) {
+					$error = 'That is not one of your zones.';
 					break;
 				}
 
-				$pickup_zone = Pokbon_Delivery_Geo::resolve_zone_code( $pin[0], $pin[1] );
-				if ( $pickup_zone === '' ) {
-					$error = 'That pin is outside every delivery zone you have set up, so nothing could price a route from it. Add a zone covering it first.';
+				// A pin inside a zone you have set up names its own zone, so
+				// there is no need to pick one as well. Only what the pin
+				// cannot answer has to be typed.
+				if ( $pickup_zone === '' && $pin !== null ) {
+					$pickup_zone = Pokbon_Delivery_Geo::resolve_zone_code( $pin[0], $pin[1] );
+				}
+
+				$row = array_filter( [
+					'lat'          => $pin === null ? null : $pin[0],
+					'lng'          => $pin === null ? null : $pin[1],
+					'zoneCode'     => $pickup_zone !== '' ? $pickup_zone : null,
+					'address'      => sanitize_text_field( (string) wp_unslash( $_POST['address'] ?? '' ) ) ?: null,
+					'contactName'  => ( (string) get_user_meta( $vendor_id, 'store_name', true ) ) ?: null,
+					'contactPhone' => $pickup_phone !== '' ? $pickup_phone : null,
+				], static function ( $v ) {
+					return $v !== null;
+				} );
+
+				if ( $row === [] ) {
+					$error = 'Nothing to save. Fill in at least one of the pin, the zone, the address or the phone.';
 					break;
 				}
 
-				Pokbon_Delivery_Settings::save_vendor_pickup( $vendor_id, [
-					'lat'          => $pin[0],
-					'lng'          => $pin[1],
-					'address'      => sanitize_text_field( (string) wp_unslash( $_POST['address'] ?? '' ) ),
-					'contactName'  => (string) ( get_user_meta( $vendor_id, 'store_name', true ) ?: '' ),
-					'contactPhone' => $pickup_phone,
-				] );
+				Pokbon_Delivery_Settings::save_vendor_pickup( $vendor_id, $row );
 
 				Pokbon_Delivery_Audit::log( 'delivery.vendor_pickup_set', [
 					'vendor_id' => $vendor_id,
 					'zone'      => $pickup_zone,
+					'fields'    => array_keys( $row ),
 				] );
-				$notice = sprintf( 'Collection point saved. Riders will collect from zone %s.', $pickup_zone );
+
+				// Say what will actually happen now, rather than "saved".
+				$diag   = Pokbon_Delivery_Orders::pickup_diagnosis( $vendor_id );
+				$notice = $diag['source'] === 'filter'
+					? sprintf(
+						'Saved. Riders collect from %s for this vendor.',
+						$pickup_zone !== '' ? 'zone ' . $pickup_zone : 'the point you set'
+					)
+					: sprintf(
+						'Saved, but this vendor still resolves to %s. %s',
+						$diag['source'] === 'default' ? 'YOUR DEFAULT collection point' : $diag['source'],
+						$diag['why']
+					);
 				break;
 
 			case 'settle_payout':

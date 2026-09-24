@@ -289,6 +289,8 @@ export interface RiderJob {
     address: string;
     zoneCode: string | null;
     note: string | null;
+    /** False: lat/lng are a zone centre. Search the address, do not ride to the point. */
+    pinned: boolean;
     contactName: string;
     contactPhone: string;
   };
@@ -299,6 +301,7 @@ export interface RiderJob {
     zoneCode: string | null;
     ghanaPost: string | null;
     note: string | null;
+    pinned: boolean;
     contactName: string;
     contactPhone: string;
   };

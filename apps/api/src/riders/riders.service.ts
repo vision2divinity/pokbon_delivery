@@ -270,7 +270,10 @@ export class RidersService {
       // Never quietly reinstate somebody who was suspended or who left. That
       // decision belongs on the rider screen, where it is deliberate.
       const locked: string[] = [RiderStatus.SUSPENDED, RiderStatus.LEFT, RiderStatus.REJECTED];
-      const status = locked.includes(existing.status) ? existing.status : input.status;
+      const status =
+        locked.includes(existing.status) || input.status === 'UNCHANGED'
+          ? existing.status
+          : input.status;
 
       const updated = await this.prisma.rider.update({
         where: { id: existing.id },
@@ -288,7 +291,9 @@ export class RidersService {
     const created = await this.prisma.rider.create({
       data: {
         phone: input.phone,
-        status: input.status,
+        // Nobody can be created "unchanged": a rider who did not exist a moment
+        // ago is a draft until somebody decides otherwise.
+        status: input.status === 'UNCHANGED' ? RiderStatus.DRAFT : input.status,
         appliedAt: new Date(),
         ...profile,
         fullName: input.fullName,

@@ -123,6 +123,18 @@ export const createJobSchema = z.object({
     zoneCode: z.string().max(40).optional(),
     /** How to find the collection point. Shown to the rider, never routed on. */
     note: z.string().max(500).optional(),
+    /*
+     * Did somebody point at this spot on a map, or is it a zone centre?
+     *
+     * A vendor can now be given a zone without a pin — which is enough to price
+     * the route and offer the job, and is not enough to ride to. The same
+     * distinction the drop-off already makes, and for the same reason: sending
+     * a rider confidently into the middle of a suburb is worse than telling
+     * them to search for the shop by name.
+     *
+     * Defaults true, so a pickup that really was pinned behaves as it always has.
+     */
+    pinned: z.boolean().default(true),
     ...contact.shape,
   }),
   dropoff: z.object({
@@ -288,8 +300,17 @@ export const riderUpsertSchema = z.object({
   nextOfKinName: z.string().max(120).optional(),
   nextOfKinPhone: ghanaPhone.optional(),
 
-  /** APPROVED puts them straight to work; DRAFT leaves them to finish it themselves. */
-  status: z.enum(['DRAFT', 'APPROVED']).default('APPROVED'),
+  /**
+   * APPROVED puts them straight to work; DRAFT leaves them to finish it
+   * themselves; UNCHANGED means this call is not about their status at all.
+   *
+   * UNCHANGED exists because correcting a rider's phone number or base zone is
+   * not a decision about whether they may work. Without it, editing an APPLIED
+   * rider through this route silently approved them, and editing an APPROVED
+   * one without ticking a box silently demoted them to DRAFT — an approval
+   * granted or withdrawn as a side effect of fixing a typo.
+   */
+  status: z.enum(['DRAFT', 'APPROVED', 'UNCHANGED']).default('APPROVED'),
 
   /**
    * Whether the contractor agreement was signed on paper.

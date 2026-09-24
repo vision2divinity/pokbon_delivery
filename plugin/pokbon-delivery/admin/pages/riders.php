@@ -19,6 +19,22 @@ if ( ! current_user_can( POKBON_DELIVERY_CAP ) ) {
 $detail_id = isset( $_GET['rider'] ) ? sanitize_text_field( wp_unslash( $_GET['rider'] ) ) : '';
 $filter    = isset( $_GET['status'] ) ? strtoupper( sanitize_key( wp_unslash( $_GET['status'] ) ) ) : 'APPLIED';
 
+/*
+ * The vehicle classes, in one place.
+ *
+ * Written out twice, the add form and the edit form drifted immediately: the
+ * edit form offered Bicycle and Van, neither of which is in the VehicleClass
+ * enum, so saving either would have been refused by the API with an error
+ * about a field the person never chose.
+ */
+$vehicle_classes = [
+	'MOTORBIKE' => 'Motorbike',
+	'TRICYCLE'  => 'Tricycle',
+	'CAR'       => 'Car',
+	'PICKUP'    => 'Pickup',
+	'CANTER'    => 'Canter',
+];
+
 $id_levels = [
 	'PHOTO' => 'Photographed only — not verified',
 	'NFC'   => 'Chip read — the card is genuine',
@@ -99,6 +115,98 @@ $id_levels = [
 					<?php endif; ?>
 				<?php endforeach; ?>
 			</p>
+
+			<?php
+			/*
+			 * Correcting a rider's details is not a decision about them.
+			 *
+			 * Everything below could be typed when the rider was added and then
+			 * never again, so a rider who moved across town kept being offered
+			 * work in the zone they left, and a wrong registration stayed wrong.
+			 * Their status is deliberately untouched here — approving and
+			 * suspending is the form underneath, where it is meant.
+			 *
+			 * Blank means "leave it alone", never "erase it". The one field that
+			 * cannot be changed is the phone, because that is what the rider
+			 * signs in with and what identifies them: changing it would create a
+			 * second rider rather than rename this one.
+			 */
+			?>
+			<h3>Details</h3>
+			<?php Pokbon_Delivery_Admin::form_open( 'edit_rider' ); ?>
+				<input type="hidden" name="rider_id" value="<?php echo esc_attr( $detail_id ); ?>">
+				<input type="hidden" name="phone" value="<?php echo esc_attr( $rider['phone'] ?? '' ); ?>">
+				<table class="form-table" style="max-width:60em">
+					<tr>
+						<th scope="row"><label for="pkbd-e-name">Name</label></th>
+						<td><input id="pkbd-e-name" name="full_name" type="text" class="regular-text"
+							value="<?php echo esc_attr( $rider['fullName'] ?? '' ); ?>" required></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="pkbd-e-zone">Based in</label></th>
+						<td>
+							<select id="pkbd-e-zone" name="base_zone">
+								<option value="">&mdash; none &mdash;</option>
+								<?php foreach ( Pokbon_Delivery_Settings::active_zones() as $zone ) : ?>
+									<option value="<?php echo esc_attr( $zone['code'] ); ?>"
+										<?php selected( strtoupper( (string) ( $rider['baseZoneCode'] ?? '' ) ), strtoupper( (string) $zone['code'] ) ); ?>>
+										<?php echo esc_html( $zone['name'] . ' (' . $zone['code'] . ')' ); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+							<p class="description">
+								Where they work from. Jobs collecting in this zone are offered to them first,
+								so change it when they move &mdash; otherwise they keep being sent across town.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="pkbd-e-vehicle">Vehicle</label></th>
+						<td>
+							<select id="pkbd-e-vehicle" name="vehicle_class">
+								<?php foreach ( $vehicle_classes as $value => $label ) : ?>
+									<option value="<?php echo esc_attr( $value ); ?>"
+										<?php selected( strtoupper( (string) ( $rider['vehicleClass'] ?? 'MOTORBIKE' ) ), $value ); ?>>
+										<?php echo esc_html( $label ); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+							<input name="vehicle_registration" type="text" class="regular-text" style="width:12em"
+								placeholder="Registration"
+								value="<?php echo esc_attr( $rider['vehicleRegistration'] ?? '' ); ?>">
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="pkbd-e-licence">Licence</label></th>
+						<td><input id="pkbd-e-licence" name="licence_number" type="text" class="regular-text"
+							value="<?php echo esc_attr( $rider['licenceNumber'] ?? '' ); ?>"></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="pkbd-e-momo">Paid to</label></th>
+						<td>
+							<input id="pkbd-e-momo" name="momo_number" type="text" class="regular-text"
+								value="<?php echo esc_attr( $rider['momoNumber'] ?? '' ); ?>">
+							<p class="description">Blank uses their sign-in number.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="pkbd-e-kin">Next of kin</label></th>
+						<td>
+							<input id="pkbd-e-kin" name="next_of_kin_name" type="text" class="regular-text" style="width:14em"
+								placeholder="Name" value="<?php echo esc_attr( $rider['nextOfKinName'] ?? '' ); ?>">
+							<input name="next_of_kin_phone" type="text" class="regular-text" style="width:12em"
+								placeholder="Phone" value="<?php echo esc_attr( $rider['nextOfKinPhone'] ?? '' ); ?>">
+						</td>
+					</tr>
+				</table>
+				<p>
+					<button class="button button-primary" type="submit">Save details</button>
+					<span class="description">
+						Their status stays <strong><?php echo esc_html( $rider['status'] ?? '' ); ?></strong>.
+						The phone number cannot be changed here &mdash; it is what they sign in with.
+					</span>
+				</p>
+			</form>
 
 			<h3>Decision</h3>
 			<?php Pokbon_Delivery_Admin::form_open( 'rider_decision' ); ?>
@@ -216,7 +324,7 @@ $id_levels = [
 			<th scope="row"><label for="pkbd-r-vehicle">Vehicle</label></th>
 			<td>
 				<select id="pkbd-r-vehicle" name="vehicle_class">
-					<?php foreach ( [ 'MOTORBIKE' => 'Motorbike', 'TRICYCLE' => 'Tricycle', 'CAR' => 'Car', 'PICKUP' => 'Pickup', 'CANTER' => 'Canter' ] as $value => $label ) : ?>
+					<?php foreach ( $vehicle_classes as $value => $label ) : ?>
 						<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
 					<?php endforeach; ?>
 				</select>
