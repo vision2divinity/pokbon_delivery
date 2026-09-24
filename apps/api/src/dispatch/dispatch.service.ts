@@ -77,7 +77,23 @@ export class DispatchService {
         await this.prisma.$transaction(async (tx) => {
           await tx.job.updateMany({ where: { id: jobId, status: job.status }, data: { status: JobStatus.UNFULFILLED } });
           await tx.jobEvent.create({ data: { jobId, type: 'status.unfulfilled', actor, detail: { ridersTried, offers: tried.length } } });
-          await this.outbox.enqueue('job.status', { jobId, orderId: job.externalRef, source: job.source, status: 'unfulfilled', at: new Date().toISOString() }, tx);
+          await this.outbox.enqueue(
+            'job.status',
+            {
+              jobId,
+              orderId: job.externalRef,
+              source: job.source,
+              status: 'unfulfilled',
+              // WHICH leg. The plugin raises the alarm from this, and "a
+              // delivery on order 87715 has no rider" is not actionable on a
+              // three-vendor order — the human needs to know whose goods are
+              // not moving before they can do anything about it.
+              vendorId: job.vendorId,
+              pickupZoneCode: job.pickupZoneCode,
+              at: new Date().toISOString(),
+            },
+            tx,
+          );
         });
         this.logger.warn(`Job ${jobId} unfulfilled after ${ridersTried} rider(s), ${tried.length} offer(s) — dispatcher must act`);
       }
@@ -90,7 +106,23 @@ export class DispatchService {
         await this.prisma.$transaction(async (tx) => {
           await tx.job.updateMany({ where: { id: jobId, status: job.status }, data: { status: JobStatus.UNFULFILLED } });
           await tx.jobEvent.create({ data: { jobId, type: 'status.unfulfilled', actor, detail: { reason: 'no_candidates', ridersTried, offers: tried.length } } });
-          await this.outbox.enqueue('job.status', { jobId, orderId: job.externalRef, source: job.source, status: 'unfulfilled', at: new Date().toISOString() }, tx);
+          await this.outbox.enqueue(
+            'job.status',
+            {
+              jobId,
+              orderId: job.externalRef,
+              source: job.source,
+              status: 'unfulfilled',
+              // WHICH leg. The plugin raises the alarm from this, and "a
+              // delivery on order 87715 has no rider" is not actionable on a
+              // three-vendor order — the human needs to know whose goods are
+              // not moving before they can do anything about it.
+              vendorId: job.vendorId,
+              pickupZoneCode: job.pickupZoneCode,
+              at: new Date().toISOString(),
+            },
+            tx,
+          );
         });
         this.logger.warn(`Job ${jobId}: nobody eligible to offer to`);
       }

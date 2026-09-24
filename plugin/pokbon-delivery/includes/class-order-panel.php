@@ -80,6 +80,28 @@ class Pokbon_Delivery_Order_Panel {
 				esc_html( $status ?: 'created' )
 			);
 
+			/*
+			 * A leg with no rider, said on the screen somebody actually opens.
+			 *
+			 * The job board knows, and the job board is not where anyone looks
+			 * when an order appears to have gone through. This is.
+			 */
+			$stuck = $order->get_meta( Pokbon_Delivery_Orders::META_UNFULFILLED );
+			$stuck = is_array( $stuck ) ? $stuck : [];
+			if ( $stuck !== [] ) {
+				printf(
+					'<p style="color:#b32d2e;border:1px solid #b32d2e;padding:.6em;border-radius:3px">'
+						. '<strong>%d of %d deliveries have no rider.</strong><br>%s</p>',
+					count( $stuck ),
+					count( $job_ids ),
+					esc_html(
+						( $order->get_date_paid() || $order->is_paid() )
+							? 'This customer has paid. Assign a rider by hand from the job board, or refund the items that are not coming.'
+							: 'Assign a rider by hand from the job board.'
+					)
+				);
+			}
+
 			self::render_doorstep_money( $order, $job_ids );
 
 			printf(

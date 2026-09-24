@@ -27,6 +27,8 @@ class Pokbon_Delivery_Orders {
 	const META_STATUS     = '_pokbon_delivery_status';
 	const META_FEE        = '_pokbon_delivery_fee';
 	const META_SKIPPED    = '_pokbon_delivery_skipped_reason';
+	/** job id => when it was first reported as having no rider. */
+	const META_UNFULFILLED = '_pokbon_delivery_unfulfilled';
 	/**
 	 * The zone a dispatcher chose for an order that has no coordinates.
 	 *
@@ -529,9 +531,116 @@ class Pokbon_Delivery_Orders {
 
 		$order->save();
 
+		if ( $status === 'unfulfilled' ) {
+			self::raise_unfulfilled_alarm( $order, $job_id, $payload );
+		}
+
 		self::close_marketplace_order( $order, $status, $payload );
 
 		return true;
+	}
+
+	/**
+	 * A leg nobody will collect, on an order somebody has already paid for.
+	 *
+	 * THE BUG THIS EXISTS FOR. Order 87715 had three vendors. One leg reached a
+	 * rider; the other two found nobody in range and went UNFULFILLED. The
+	 * buyer had paid for all three items and all of the delivery, up front, and
+	 * was going to receive one parcel.
+	 *
+	 * Nothing anywhere said so. The API emitted the status faithfully and the
+	 * plugin dropped it, because ORDER_STATUS_SETTINGS has no `unfulfilled` key
+	 * and apply_status() returns early for anything not in that table. The only
+	 * trace was a row on the job board reading UNFULFILLED, on a screen nobody
+	 * has a reason to open when an order looks like it went through.
+	 *
+	 * The delivery service keeps retrying for 24 hours, which is right and is
+	 * not the point: the retry is a hope, and a customer who has paid is owed
+	 * a certainty. So this is loud, immediately, on the two channels the owner
+	 * already watches, and it names what was NOT collected rather than the job
+	 * id, because the question a human has to answer is "what does this
+	 * customer not have yet".
+	 *
+	 * Once per job. The sweep re-offers and can re-enter UNFULFILLED, and an
+	 * alarm that repeats every few minutes is an alarm somebody switches off.
+	 */
+	private static function raise_unfulfilled_alarm( $order, string $job_id, array $payload ): void {
+		$flagged = $order->get_meta( self::META_UNFULFILLED );
+		$flagged = is_array( $flagged ) ? $flagged : [];
+		if ( isset( $flagged[ $job_id ] ) ) {
+			return;
+		}
+		$flagged[ $job_id ] = gmdate( 'c' );
+		$order->update_meta_data( self::META_UNFULFILLED, $flagged );
+		$order->save();
+
+		$order_id = (int) $order->get_id();
+		$vendor   = (int) ( $payload['vendorId'] ?? 0 );
+		$who      = $vendor > 0
+			? ( (string) get_user_meta( $vendor, 'store_name', true ) ?: ( 'vendor ' . $vendor ) )
+			: 'a vendor';
+
+		$legs  = count( self::job_ids_for( $order ) );
+		$stuck = count( $flagged );
+		$paid  = $order->get_date_paid() || $order->is_paid();
+
+		$headline = sprintf(
+			'No rider for %s on order #%d — %d of %d deliveries stuck.%s',
+			$who,
+			$order_id,
+			$stuck,
+			max( 1, $legs ),
+			$paid ? ' THE CUSTOMER HAS ALREADY PAID.' : ''
+		);
+
+		$order->add_order_note( sprintf(
+			'[POKBON Delivery] %s Nobody was in range to collect it, and the delivery service will keep trying for 24 hours. %s',
+			$headline,
+			$paid
+				? 'This customer has paid for goods that are not on their way. Assign a rider by hand from the job board, or refund the items from this vendor.'
+				: 'Assign a rider by hand from the job board.'
+		) );
+
+		Pokbon_Delivery_Audit::log( 'delivery.unfulfilled', [
+			'order_id'  => $order_id,
+			'job_id'    => $job_id,
+			'vendor_id' => $vendor,
+			'paid'      => (bool) $paid,
+			'stuck'     => $stuck,
+			'legs'      => $legs,
+		] );
+
+		// The same two channels a payout request uses, because they are the two
+		// the owner has already proved they read.
+		$owner = Pokbon_Delivery_Messages::normalise_ghana_phone(
+			(string) Pokbon_Delivery_Settings::get( 'payout_notify_phone' )
+		);
+		if ( $owner !== '' ) {
+			$reason = Pokbon_Delivery_Messages::sms_with_reason(
+				$owner,
+				'POKBON: ' . $headline . ' Assign a rider by hand.',
+				[ 'purpose' => 'unfulfilled', 'order_id' => $order_id ]
+			);
+			if ( $reason !== '' ) {
+				Pokbon_Delivery_Audit::log( 'delivery.unfulfilled_notify_failed', [ 'reason' => $reason ] );
+			}
+		}
+
+		$to = (string) get_option( 'admin_email' );
+		if ( $to !== '' ) {
+			@wp_mail(
+				$to,
+				sprintf( '[POKBON Delivery] No rider for order #%d', $order_id ),
+				$headline . "
+
+Collection point: " . (string) ( $payload['pickupZoneCode'] ?? 'unknown' ) . "
+Job: " . $job_id . "
+
+Nobody was in range. The delivery service keeps retrying for 24 hours, but a
+customer who has paid should not be waiting on a retry — open POKBON Delivery
+-> Job board and assign a rider by hand, or refund this vendor's items."
+			);
+		}
 	}
 
 	/**

@@ -71,16 +71,29 @@ type Place = {
   contactName?: string | null;
 };
 
-function navigationUrl(place: Place): string {
+/**
+ * @param useName Search for the contact's NAME as well as the address.
+ *
+ * True only for a collection point, where the name is a business with a
+ * signboard and often the only findable thing about it. Never for a drop-off,
+ * where the name is a PERSON — and a person's name in a maps query is not
+ * ignored, it is matched. "POKBON Marketplace, Planet Close 44, Sowutuom"
+ * found the business called POKBON Marketplace and drove the rider there
+ * instead of to the customer, who happened to be the same person that day and
+ * will not be next time.
+ *
+ * I added the name for the pickup and let it leak into the drop-off. The
+ * lesson is the one this file already carries twice: a wrong answer delivered
+ * with the same confidence as a right one is worse than no button at all.
+ */
+function navigationUrl(place: Place, useName = false): string {
   const pinned = place.pinned !== false;
   if (pinned) {
     return `geo:${place.lat},${place.lng}?q=${place.lat},${place.lng}`;
   }
 
   const ghanaPost = place.ghanaPost ?? '';
-  // The shop's name is worth searching for at a collection point, where the
-  // address is often a district and the business is what is on the signboard.
-  const query = [ghanaPost, place.contactName, place.address]
+  const query = [ghanaPost, useName ? place.contactName : '', place.address]
     .map((p) => (p ?? '').trim())
     .filter(Boolean)
     .join(', ');
@@ -243,6 +256,18 @@ export default function JobScreen() {
   const payOnDelivery = job.paymentMethod === 'PAY_ON_DELIVERY';
   const done = ['DELIVERED', 'RETURNED', 'CANCELLED'].includes(job.status);
 
+  /*
+   * What the customer actually said, with the system's own sentence taken out.
+   *
+   * Stripped here rather than trusted to be absent, because the plugin that
+   * appends it is installed separately and an older one is still out there —
+   * and a rider reading "[No map pin on this order]" under "Note from the
+   * customer" would reasonably conclude the customer is talking nonsense.
+   */
+  const customerNote = (job.dropoff.note ?? '')
+    .replace(/\[No map pin on this order[^\]]*\]/gi, '')
+    .trim();
+
   const input = {
     backgroundColor: c.backgroundSecondary,
     borderColor: c.border,
@@ -261,7 +286,26 @@ export default function JobScreen() {
       <Card>
         <Field label="Deliver to" value={job.dropoff.contactName || 'Customer'} />
         <Field label="Address" value={job.dropoff.address} />
-        {job.dropoff.note ? <Field label="Landmark" value={job.dropoff.note} /> : null}
+        {/*
+          Two different things were being shown under one label.
+          `note` carries whatever the customer typed, and the plugin also
+          appended "[No map pin on this order — go by the address and call the
+          customer.]" to it. So on every order without a pin — which is most of
+          them — the rider read a sentence the system had written, under a
+          heading saying LANDMARK, as though the customer had written it. And
+          on the orders where the customer DID leave a landmark it was buried
+          in the same line as the warning.
+
+          The warning is a state of the job, and the job already reports that
+          state as `pinned`. So it is shown as a warning, and the customer's
+          own words are shown as theirs.
+        */}
+        {customerNote ? <Field label="Note from the customer" value={customerNote} /> : null}
+        {job.dropoff.pinned === false ? (
+          <Notice tone="warning">
+            No map pin on this order. Go by the address, and call the customer when you are close.
+          </Notice>
+        ) : null}
         {job.dropoff.ghanaPost ? <Field label="GhanaPost GPS" value={job.dropoff.ghanaPost} /> : null}
         <Row>
           <View style={{ flex: 1 }}>
@@ -309,7 +353,7 @@ export default function JobScreen() {
             <Button
               title="Navigate"
               kind="secondary"
-              onPress={() => void Linking.openURL(navigationUrl(job.pickup))}
+              onPress={() => void Linking.openURL(navigationUrl(job.pickup, true))}
             />
           </View>
         </Row>
