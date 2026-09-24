@@ -229,7 +229,22 @@ POKBON Delivery → Riders → Payouts to settle it."
 				return new WP_Error( 'bad_request', 'jobId and orderId are required.', [ 'status' => 400 ] );
 			}
 
-			$intent = Pokbon_Delivery_Payments::prompt( $order_id, $job_id, $reason === 'retry' ? 'retry' : 'arrival' );
+			// Other legs of this order in the SAME rider's hands, settled in one
+			// charge. The API says which; this plugin decides how much.
+			$also = [];
+			foreach ( (array) ( $body['alsoJobIds'] ?? [] ) as $sibling ) {
+				$sibling = sanitize_text_field( (string) $sibling );
+				if ( $sibling !== '' && $sibling !== $job_id ) {
+					$also[] = $sibling;
+				}
+			}
+
+			$intent = Pokbon_Delivery_Payments::prompt(
+				$order_id,
+				$job_id,
+				$reason === 'retry' ? 'retry' : 'arrival',
+				array_values( array_unique( $also ) )
+			);
 
 			if ( is_wp_error( $intent ) ) {
 				return new WP_Error(

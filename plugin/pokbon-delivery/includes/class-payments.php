@@ -183,10 +183,21 @@ class Pokbon_Delivery_Payments {
 	 * figure recomputed later — that is how a partly-paid order would otherwise
 	 * talk itself into accepting the wrong amount.
 	 */
-	private static function remember_attempt( $order, string $job_id, string $reference, int $amount_minor ): void {
+	private static function remember_attempt( $order, string $job_id, string $reference, int $amount_minor, array $covered = [] ): void {
 		$refs  = self::map( $order, self::META_LEG_REF );
 		$mine  = isset( $refs[ $job_id ] ) && is_array( $refs[ $job_id ] ) ? $refs[ $job_id ] : [];
-		array_unshift( $mine, [ 'ref' => $reference, 'amountMinor' => $amount_minor ] );
+		/*
+		 * `covered` is which legs this one charge was raised for, and for how
+		 * much each. Without it a rider carrying three parcels would approve one
+		 * prompt and only the leg that asked would come back paid — the other
+		 * two sitting unpaid for ever, the order never reaching its total, and
+		 * the rider unable to hand over goods already paid for.
+		 */
+		array_unshift( $mine, [
+			'ref'         => $reference,
+			'amountMinor' => $amount_minor,
+			'covered'     => $covered === [] ? [ $job_id => $amount_minor ] : $covered,
+		] );
 		// Paystack expires a mobile-money prompt; older attempts than this
 		// cannot still be open, and an unbounded list would grow for ever.
 		$refs[ $job_id ] = array_slice( $mine, 0, 5 );
@@ -287,7 +298,19 @@ class Pokbon_Delivery_Payments {
 	 * taps Send prompt again. Returns the intent shape the API expects, or a
 	 * WP_Error the API turns into "prompt failed, try again".
 	 */
-	public static function prompt( int $order_id, string $job_id, string $reason = 'arrival' ) {
+	/**
+	 * @param string[] $also Other legs of this order the SAME rider is holding.
+	 *
+	 * One rider at one door with three parcels is one payment. Charging per leg
+	 * would put three mobile-money prompts in front of a customer who ordered
+	 * once, one after another, while the rider stands there. The legs are summed
+	 * into a single charge and settled together against the one reference.
+	 *
+	 * Only ever this rider's legs, and the API is the one that says which: a leg
+	 * another rider still has is a separate journey, and taking money for it now
+	 * would be charging for goods nobody has arrived with.
+	 */
+	public static function prompt( int $order_id, string $job_id, string $reason = 'arrival', array $also = [] ) {
 		if ( ! function_exists( 'wc_get_order' ) ) {
 			return new WP_Error( 'wc_missing', 'WooCommerce is not active.' );
 		}
@@ -326,7 +349,30 @@ class Pokbon_Delivery_Payments {
 		 * retries and re-dispatches happen, the legs together can never take
 		 * more than the total.
 		 */
-		$amount_minor = self::chargeable_minor( $order, $job_id );
+		/*
+		 * This leg, plus anything else in the same rider's hands.
+		 *
+		 * chargeable_minor() caps each one at what the order still owes, and a
+		 * leg already settled contributes zero — so a retry after a partial
+		 * success charges only what is genuinely left, and the legs together
+		 * can still never exceed the order total.
+		 */
+		$settling = [ $job_id => self::chargeable_minor( $order, $job_id ) ];
+		foreach ( $also as $sibling ) {
+			$room = self::outstanding_minor( $order ) - array_sum( $settling );
+			if ( $room <= 0 ) {
+				break;
+			}
+			$settling[ $sibling ] = min( self::chargeable_minor( $order, $sibling ), $room );
+		}
+		$settling = array_filter(
+			$settling,
+			static function ( $minor ) {
+				return $minor > 0;
+			}
+		);
+
+		$amount_minor = (int) array_sum( $settling );
 		if ( $amount_minor <= 0 ) {
 			return new WP_Error(
 				'nothing_to_collect',
@@ -464,7 +510,7 @@ class Pokbon_Delivery_Payments {
 		$stage       = strtolower( (string) ( $data['status'] ?? '' ) );
 		$instruction = trim( (string) ( $data['display_text'] ?? $data['message'] ?? '' ) );
 
-		self::remember_attempt( $order, $job_id, $reference, $amount_minor );
+		self::remember_attempt( $order, $job_id, $reference, $amount_minor, $settling );
 		$leg_prompts[ $job_id ] = $prompts + 1;
 		$order->update_meta_data( self::META_LEG_PROMPTS, $leg_prompts );
 		$order->update_meta_data( '_pokbon_paystack_channel', 'mobile_money' );
@@ -908,9 +954,13 @@ class Pokbon_Delivery_Payments {
 		if ( isset( $refs[ $job_id ] ) && is_array( $refs[ $job_id ] ) ) {
 			foreach ( $refs[ $job_id ] as $attempt ) {
 				if ( ! empty( $attempt['ref'] ) ) {
+					$expected   = (int) ( $attempt['amountMinor'] ?? 0 );
 					$attempts[] = [
 						'ref'      => (string) $attempt['ref'],
-						'expected' => (int) ( $attempt['amountMinor'] ?? 0 ),
+						'expected' => $expected,
+						'covered'  => is_array( $attempt['covered'] ?? null ) && $attempt['covered'] !== []
+							? $attempt['covered']
+							: [ $job_id => $expected ],
 					];
 				}
 			}
@@ -932,7 +982,11 @@ class Pokbon_Delivery_Payments {
 			foreach ( [ '_pokbon_paystack_reference', '_pokbon_paystack_reference_prev' ] as $meta_key ) {
 				$legacy = (string) $order->get_meta( $meta_key );
 				if ( $legacy !== '' ) {
-					$attempts[] = [ 'ref' => $legacy, 'expected' => self::order_total_minor( $order ) ];
+						$attempts[] = [
+						'ref'      => $legacy,
+						'expected' => self::order_total_minor( $order ),
+						'covered'  => [ $job_id => self::order_total_minor( $order ) ],
+					];
 				}
 			}
 		}
@@ -940,6 +994,9 @@ class Pokbon_Delivery_Payments {
 		foreach ( $attempts as $attempt ) {
 			$reference = $attempt['ref'];
 			$expected  = $attempt['expected'] > 0 ? $attempt['expected'] : self::order_total_minor( $order );
+			$covered   = is_array( $attempt['covered'] ?? null ) && $attempt['covered'] !== []
+				? $attempt['covered']
+				: [ $job_id => $expected ];
 
 			$verify = self::paystack( 'GET', '/transaction/verify/' . rawurlencode( $reference ), null, $secret );
 			if ( is_wp_error( $verify ) ) {
@@ -991,16 +1048,23 @@ class Pokbon_Delivery_Payments {
 			 * that is_paid() counts `processing`. The lesson was learned, written
 			 * down, and then repeated three hundred lines away.
 			 */
-			// This door, with whatever was actually captured at it. The order as
-			// a whole is closed by record_leg_payment() once the legs add up.
-			self::record_leg_payment(
-				$order,
-				$job_id,
-				$reference,
-				$paid,
-				(string) ( $verify['data']['paid_at'] ?? '' ),
-				$verify
-			);
+			/*
+			 * Settle every leg this charge was raised for, not only the one that
+			 * asked. One rider, one prompt, three parcels handed over.
+			 *
+			 * The order as a whole is closed by record_leg_payment() once the
+			 * legs add up to it.
+			 */
+			foreach ( $covered as $leg_id => $leg_minor ) {
+				self::record_leg_payment(
+					$order,
+					(string) $leg_id,
+					$reference,
+					(int) $leg_minor,
+					(string) ( $verify['data']['paid_at'] ?? '' ),
+					$verify
+				);
+			}
 
 			return [
 				'intentId'  => self::intent_for( (int) $order->get_id(), $job_id ),

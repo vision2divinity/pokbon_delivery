@@ -114,6 +114,19 @@ export class PluginClient {
     jobId: string;
     orderId: string;
     reason: 'arrival' | 'retry';
+    /**
+     * Other legs of this same order that THIS rider is also carrying.
+     *
+     * One rider at one door with three parcels is one payment, not three
+     * mobile-money prompts in a row for a customer standing in front of them.
+     * The plugin adds those legs to this charge and marks them all settled
+     * against the one reference.
+     *
+     * The API cannot decide the amount — it never handles money — so it says
+     * only which legs are in the same rider's hands and leaves the arithmetic
+     * where the arithmetic lives.
+     */
+    alsoJobIds?: string[];
     eventId?: string;
   }): Promise<PaymentIntent> {
     const eventId = input.eventId ?? randomUUID();

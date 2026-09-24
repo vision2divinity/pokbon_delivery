@@ -922,7 +922,38 @@ export class JobsService {
     if (job.promptCount >= max) {
       throw new ConflictException(`The prompt has been sent ${max} times. Use pay-by-link or mark the delivery failed.`);
     }
-    const intent = await this.plugin.paymentPrompt({ jobId: job.id, orderId: job.externalRef, reason });
+    /*
+     * Everything else on this order that the SAME rider is holding.
+     *
+     * A rider who collected from three vendors for one buyer arrives once.
+     * Charging per leg would mean three prompts at that doorstep, one after
+     * another, for a customer who ordered once — so the legs in this rider's
+     * hands are settled together, in a single charge for the whole of what
+     * they are handing over.
+     *
+     * Deliberately only THIS rider's legs. A leg another rider still has is
+     * another journey, on its own timing, and paying for it now would mean
+     * paying for goods nobody has arrived with.
+     */
+    const alsoJobIds = (
+      await this.prisma.job.findMany({
+        where: {
+          externalRef: job.externalRef,
+          riderId: job.riderId,
+          id: { not: job.id },
+          paymentMethod: PaymentMethod.PAY_ON_DELIVERY,
+          status: { notIn: [JobStatus.DELIVERED, JobStatus.CANCELLED, JobStatus.RETURNED, JobStatus.FAILED] },
+        },
+        select: { id: true },
+      })
+    ).map((row) => row.id);
+
+    const intent = await this.plugin.paymentPrompt({
+      jobId: job.id,
+      orderId: job.externalRef,
+      reason,
+      alsoJobIds,
+    });
     return this.prisma.$transaction((tx) =>
       this.transition(tx, job, JobStatus.PAYMENT_PENDING, actor, {
         data: {
