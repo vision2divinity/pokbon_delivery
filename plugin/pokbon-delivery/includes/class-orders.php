@@ -864,6 +864,19 @@ class Pokbon_Delivery_Orders {
 		return $pickup === null ? '' : (string) ( $pickup['zoneCode'] ?? '' );
 	}
 
+	/**
+	 * The whole collection point, coordinates and all.
+	 *
+	 * pickup_zone_for_vendor() throws away the latitude and longitude, and a
+	 * caller that only has a zone code cannot reach the distance rung — so a
+	 * pickup whose zone has no explicit pair and no band silently prices as
+	 * "we do not serve this route" rather than falling through as the ladder
+	 * intends. Anything pricing a route needs this one, not the code alone.
+	 */
+	public static function pickup_for_vendor( $vendor_id ): ?array {
+		return self::pickup_for( $vendor_id, null );
+	}
+
 	private static function pickup_for( $vendor_id, $order ): ?array {
 		$found = self::resolve_pickup( $vendor_id, $order );
 		return $found === null ? null : $found['pickup'];

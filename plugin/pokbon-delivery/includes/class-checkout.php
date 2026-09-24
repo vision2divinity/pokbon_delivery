@@ -275,9 +275,27 @@ class Pokbon_Delivery_Checkout {
 		$total  = 0.0;
 		$priced = false;
 
-		foreach ( $pickups as $pickup_zone ) {
+		foreach ( $pickups as $pickup ) {
+			/*
+			 * Coordinates, not just a zone code.
+			 *
+			 * This passed the code alone, which quietly removed the third rung:
+			 * distance needs somewhere to measure from, and a bare code gives it
+			 * nothing. So any collection point whose zone had no explicit pair
+			 * and no band to the buyer's area failed the whole quote, the area
+			 * list came back empty, and checkout fell to the flat regional rate
+			 * — the exact bug the areas exist to fix, reintroduced one layer in.
+			 *
+			 * It hid because the DEFAULT collection point has priced pairs to
+			 * every zone, so the one case anybody tested worked perfectly. Every
+			 * real vendor was falling through.
+			 */
 			$leg = Pokbon_Delivery_Pricing::route(
-				[ 'zoneCode' => $pickup_zone ],
+				[
+					'zoneCode' => (string) ( $pickup['zoneCode'] ?? '' ),
+					'lat'      => $pickup['lat'] ?? null,
+					'lng'      => $pickup['lng'] ?? null,
+				],
 				[ 'zoneCode' => $zone['code'], 'lat' => $zone['lat'], 'lng' => $zone['lng'] ]
 			);
 			if ( $leg === null ) {
@@ -369,8 +387,9 @@ class Pokbon_Delivery_Checkout {
 		 */
 		$legs = [];
 		foreach ( array_keys( $vendors ) as $vendor_id ) {
-			$pickup = Pokbon_Delivery_Orders::pickup_zone_for_vendor( $vendor_id );
-			if ( $pickup === '' ) {
+			// The whole pickup, so the quote can reach the distance rung.
+			$pickup = Pokbon_Delivery_Orders::pickup_for_vendor( $vendor_id );
+			if ( $pickup === null || ( $pickup['zoneCode'] ?? '' ) === '' ) {
 				continue;
 			}
 			$legs[] = $pickup;

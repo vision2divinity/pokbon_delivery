@@ -119,6 +119,26 @@ class Pokbon_Delivery_Orders {
 		$map = $GLOBALS['pkbd_fixture']['vendorPickups'] ?? [];
 		return (string) ( $map[ (string) (int) $vendor_id ] ?? '' );
 	}
+
+	/**
+	 * The whole collection point, coordinates included.
+	 *
+	 * The real one returns lat/lng so a quote can reach the distance rung. A
+	 * stub that returned only a code would let the bug this now guards against
+	 * pass unnoticed — which is exactly how it shipped.
+	 */
+	public static function pickup_for_vendor( $vendor_id ): ?array {
+		$code = self::pickup_zone_for_vendor( $vendor_id );
+		if ( $code === '' ) {
+			return null;
+		}
+		foreach ( $GLOBALS['pkbd_fixture']['zones'] as $zone ) {
+			if ( $zone['code'] === $code ) {
+				return [ 'zoneCode' => $code, 'lat' => $zone['lat'], 'lng' => $zone['lng'] ];
+			}
+		}
+		return [ 'zoneCode' => $code, 'lat' => null, 'lng' => null ];
+	}
 }
 
 require_once __DIR__ . '/../plugin/pokbon-delivery/includes/class-checkout.php';

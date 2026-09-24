@@ -37,6 +37,9 @@ const zones = [
   { code: 'KUMASI', name: 'Kumasi', lat: 6.6885, lng: -1.6244, radiusMetres: 8000, band: 'KUMASI', region: 'Ashanti', active: true },
   // Priced, in region, and switched off. Must not be offered.
   { code: 'CLOSED', name: 'Closed Area', lat: 5.5500, lng: -0.2200, radiusMetres: 4000, band: 'INNER', region: 'AA', active: false },
+  // A collection point with NO band at all. Nothing but the distance rung can
+  // price a route out of here — which is the case that broke on the live site.
+  { code: 'FARSHOP', name: 'Far Shop', lat: 5.7500, lng: -0.3000, radiusMetres: 5000, band: '', region: 'AA', active: true },
 ];
 
 const zonePairs = {};
@@ -51,8 +54,10 @@ const distanceBands = [{ maxKm: 2000, riderFeeMinor: 15000, buyerPriceMinor: 200
 // Vendor 0 is the store's own default collection point, which is what the real
 // pickup_zone_for_vendor() falls back to when a vendor has set no address.
 // Vendor 11 shares SHOP with vendor 7 — two businesses, one building.
-const productVendors = { 101: 7, 102: 9, 103: 7, 104: 11 };
-const vendorPickups = { 0: 'SHOP', 7: 'SHOP', 9: 'SHOP2', 11: 'SHOP' };
+// Vendor 13 collects from a zone with NO band, so nothing but distance can
+// price a route out of it. Vendor 0 is the default collection point.
+const productVendors = { 101: 7, 102: 9, 103: 7, 104: 11, 105: 13 };
+const vendorPickups = { 0: 'SHOP', 7: 'SHOP', 9: 'SHOP2', 11: 'SHOP', 13: 'FARSHOP' };
 
 const cases = [
   // 1. The website's two-argument call, on a request with no cart.
@@ -80,6 +85,8 @@ const cases = [
   { ask: 'price', zone: 'JAMESTOWN', productIds: [] },
   // 12. Two vendors sharing ONE address. Still two legs.
   { ask: 'price', zone: 'JAMESTOWN', productIds: [101, 104] },
+  // 13. A collection point reachable only by the distance rung.
+  { ask: 'price', zone: 'JAMESTOWN', productIds: [105] },
 ];
 
 const run = spawnSync('php', [join(here, 'checkout-zones-php.php')], {
@@ -121,9 +128,11 @@ check('no cart and no basket: nothing is offered, rather than something guessed'
 check('one basket, one collection point: the region\'s areas, cheapest first', () => {
   // Ties broken by name, so the list is stable between requests — a picker
   // that reshuffles itself makes a buyer doubt the price on it.
-  assert.deepEqual(names(got[1]), ['Anywhere', 'James Town', 'POKBON Shop', 'Second Shop', 'Madina']);
+  assert.deepEqual(names(got[1]), ['Anywhere', 'James Town', 'POKBON Shop', 'Second Shop', 'Madina', 'Far Shop']);
   assert.deepEqual(priced(got[1]), {
-    ANYWHERE: 25, JAMESTOWN: 25, SHOP: 25, SHOP2: 25, MADINA: 45,
+    // Far Shop has no band, so only the distance rung can reach it — which is
+    // the whole point of case 13 below.
+    ANYWHERE: 25, JAMESTOWN: 25, SHOP: 25, SHOP2: 25, MADINA: 45, FARSHOP: 200,
   });
 });
 
@@ -145,7 +154,7 @@ check('two products from one vendor is one collection, so one fee', () => {
 
 check('two vendors in two places is two collections, so twice the fee', () => {
   assert.deepEqual(priced(got[3]), {
-    ANYWHERE: 50, JAMESTOWN: 50, SHOP: 50, SHOP2: 50, MADINA: 90,
+    ANYWHERE: 50, JAMESTOWN: 50, SHOP: 50, SHOP2: 50, MADINA: 90, FARSHOP: 400,
   });
 });
 
@@ -185,6 +194,23 @@ check('two vendors at the SAME address are two legs, not one', () => {
   // margin. Order #87712 charged for two collection points and made three
   // jobs before anybody noticed.
   assert.equal(got[11], got[6] * 2);
+});
+
+check('a collection point priced only by distance still quotes', () => {
+  /*
+   * The quote used to pass the pickup's zone CODE and nothing else, which
+   * silently removed the third rung: distance needs somewhere to measure from.
+   * So any vendor whose zone had no explicit pair and no band produced no
+   * areas at all, checkout fell back to the flat regional rate, and the whole
+   * point of area pricing was lost for every real vendor.
+   *
+   * It hid because the default collection point has priced pairs to every
+   * zone — the one case anybody tested worked perfectly. Observed live on
+   * 2026-09-24: a non-existent product priced fine and every real one
+   * returned nothing.
+   */
+  assert.notEqual(got[12], null, 'a pickup with no pair and no band must fall through to distance');
+  assert.equal(got[12], 200, 'the catch-all distance band, GHS 200');
 });
 
 if (failures > 0) {

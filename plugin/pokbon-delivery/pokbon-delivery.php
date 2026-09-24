@@ -3,7 +3,7 @@
  * Plugin Name:       POKBON Delivery
  * Plugin URI:        https://pokbongroup.com
  * Description:       Rider dispatch for POKBON — zones and the delivery price matrix, rider approval, the live job board, and the cashless pay-on-delivery flow. Owns every setting, every payment and every message; the Delivery API owns riders, jobs and the delivery code.
- * Version:           0.5.20
+ * Version:           0.5.21
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            POKBON
@@ -20,6 +20,20 @@
  *   pokbon_mobile_app/docs/DELIVERY_INTEGRATION_2026-09-20.md
  *
  * == Changelog ==
+ * 0.5.21 (2026-09-24) — every real vendor's areas were missing from checkout:
+ *   The area quote passed the collection point's zone CODE and nothing else,
+ *   which silently removed the third rung of the ladder — distance needs
+ *   somewhere to measure from, and a bare code gives it nothing. So any vendor
+ *   whose zone had no explicit pair and no band to the buyer's area failed the
+ *   whole quote, no areas were offered at all, and checkout fell back to the
+ *   flat regional rate. That is the exact fault area pricing exists to fix,
+ *   reintroduced one layer inside it.
+ *   It hid because the DEFAULT collection point has priced pairs to every zone,
+ *   so the only case ever tested worked perfectly while every real vendor fell
+ *   through. Found by asking the live site for a product that does not exist —
+ *   which priced fine — and two that do, which returned nothing.
+ *   The quote now carries coordinates, and check-checkout-zones.mjs has a
+ *   collection point reachable only by distance.
  * 0.5.20 (2026-09-24) — reconciliation names the vendor, and counts each leg once:
  *   The Vendor column read `_wcfmmp_store_name` from order meta — a key nothing
  *   in this plugin, or in WCFM, ever writes. So it was an em dash on every row,
