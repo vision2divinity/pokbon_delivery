@@ -94,6 +94,8 @@ node scripts/check-checkout-zones.mjs    # the website and the app quote the sam
 node scripts/check-fee-split.mjs         # a delivery fee split between legs still adds up
 node scripts/check-uplift.mjs            # the failed-trip uplift cannot be printed in a loop
 node scripts/check-cod-split.mjs         # the doors add up to the order, and never to more
+
+php wp-plugin/tests/delivery-coverage.test.php   # in the pokbon_mobile_app repo
 ```
 
 Each of these exists because something it now catches reached production.
@@ -352,6 +354,41 @@ This is retention work. An unexplained balance and an unexplained refusal are
 the two commonest reasons a contractor stops turning up, and they tell other
 riders why.
 
+### 16. A Postman collection for every endpoint — agreed 2026-09-24, not scheduled
+
+Francis wants one JSON Postman collection covering every API and REST endpoint
+in the system, to keep for reference and to integrate other systems against.
+To be built at the end of the current development, not during it.
+
+**Three surfaces, and they are not one API:**
+
+| Surface | Base | Auth |
+|---|---|---|
+| Delivery API — rider app | `:3001` (tunnel `delivery-dev.pokbongroup.com`) | rider JWT from phone OTP |
+| Delivery API — admin/plugin | same | HMAC-SHA256 shared secret |
+| Plugin REST — API calls back | `pokbongroup.com/wp-json/pokbon/v1` | the same HMAC, other direction |
+| App plugin REST | `pokbongroup.com/wp-json/pokbon/v1` | WP nonce / logged-in cookie |
+
+**Why it is not a five-minute export.** The signed routes are the point of the
+whole contract and the hard part to get right: every plugin call carries a
+timestamp, an event id and an HMAC over the body, and a collection that cannot
+reproduce that signature documents only the half of the system anybody could
+have guessed. The collection needs a pre-request script that signs, with the
+secret in a Postman environment variable and NEVER in the collection file.
+
+**How to apply:** generate from the route definitions rather than by hand —
+`apps/api/src/**/*.controller.ts` and `class-rest.php` are the two registries,
+and a collection typed out by hand goes stale the first time a route moves.
+**What already exists, checked 2026-09-24:** `pokbon_mobile_app/postman/`
+holds `POKBON.postman_collection.json` — **114 requests** across Auth, 2FA,
+Affiliate, WC Proxy, Content, Vendors, Vendor (Self), Courses, Services,
+Promotions, Reviews & Q&A and Push, with an environment file beside it. So the
+marketplace half is largely done and the work is the DELIVERY half plus the
+signed plugin routes — extend that collection rather than starting a second
+one, or the two will disagree within a month.
+
+---
+
 ### Unresolved, needs one fact
 
 - **An order that reached the job board but never appeared in the rider app.**
@@ -414,6 +451,76 @@ Kept with their evidence, so none of this gets re-investigated.
   Now mirrors `WC_Gateway_COD`, last in `create_order()` so the fee is re-priced
   and the area stamped first. Proven end to end on **#87692**, placed from the
   app, cash on delivery, run to Completed with nothing pushed by hand.
+- **One rider at one door was three mobile-money prompts** — Delivery 0.5.32.
+  A rider who collected from three vendors for the same buyer arrives once, and
+  per-leg charging put three prompts in a row in front of a customer who ordered
+  once. The legs in ONE rider's hands are summed into a single charge and
+  settled together against one reference; a leg another rider holds is a
+  separate journey and is never included. The API says which legs are in the
+  same hands (`alsoJobIds`) and stops there — it never handles money. Each leg
+  still passes through `chargeable_minor()`, so the cap at "what the order still
+  owes" holds however the legs are grouped. When one rider has every leg the
+  combined charge equals the order total, so `_pokbon_paystack_reference` is
+  written and the marketplace webhook reconciles it as it always did.
+- **`is_paid()` counts `processing` as paid — a FOURTH time** — Delivery 0.5.31.
+  The first unfulfilled alarm ever sent told the owner in capital letters that a
+  cash-on-delivery customer HAD ALREADY PAID. A COD order is moved to
+  `processing` the moment it is placed, which is the event that creates the
+  jobs, so `is_paid()` answers true for exactly the orders where nothing has
+  been collected. `is_pay_on_delivery()` warns about this in a comment a
+  thousand lines below; `class-payments.php` warns twice more, one of them
+  saying the lesson was "learned, written down, and then repeated three hundred
+  lines away". **Use `get_date_paid()`. Never `is_paid()`.** The rider's job
+  screen also now opens with the COLLECTION POINT rather than the customer,
+  because that is where the rider goes first.
+- **The landmark had no question of its own** — Delivery 0.5.30, Checkout 1.3.2,
+  Mobile App 1.21.5. "Apartment, suite, landmark (optional)" asked three things
+  in one box, and whatever was typed went into address line 2 and was
+  concatenated into the address string. It is its own field now on both
+  checkouts, carried as `dropoff.landmark` the whole way, and `navigationUrl()`
+  searches it SECOND — after GhanaPostGPS, before the address — whenever an
+  order has no pin. That ordering is the point: house numbers are sparse here
+  and "opposite Melcom, Sowutuom" is a place a maps app knows. Orders placed
+  before it fall back to address line 2; the rider's screen suppresses the
+  Landmark line when those words are already in the address.
+- **A leg with no rider told nobody** — Delivery 0.5.29. Order 87715 had three
+  vendors, one leg reached a rider, and the buyer had PREPAID for all three.
+  `apply_status()` returns early for any status not in `ORDER_STATUS_SETTINGS`,
+  and `unfulfilled` is not in it — so the only trace was a row on the job board.
+  An unfulfilled leg now raises SMS + email (the pair a payout request uses),
+  writes an order note, and prints a red block on the order screen. It names the
+  VENDOR, not the job id. The callback carries `vendorId` and `pickupZoneCode`
+  for that reason.
+- **`"0"` is a truthy string, and five messages retried for three days** —
+  Delivery 0.5.28. A guest checkout is customer id 0; the plugin sent the string
+  `"0"`; `if (job.buyerUserId)` passed. Every guest order that reached a doorstep
+  queued an inbox message for user zero, which the plugin refused with 400, and
+  the outbox retried it for ever at the ten-minute backoff cap. **The outbox now
+  treats a 4xx as a refusal and lets it go** (408 and 429 excepted; 5xx still
+  retries) — retrying is for what gets better on its own, and a 400 is the
+  plugin saying the message is wrong.
+- **One zone with a lost decimal froze the entire configuration** — Delivery
+  0.5.27. `save_zone` did `(float) $_POST['lng']` with no range check, so
+  `-0.1651` typed as `-1651` saved silently. One bad zone rejects the WHOLE
+  settings push — every zone, price, band and setting — so riders went on being
+  dispatched from the previous copy while new zones and changed radii did
+  nothing. The form bounds both coordinates, the handler refuses an impossible
+  centre in words, and `push()` checks first and names the ZONE rather than
+  letting the API answer with `zones.7.lng`.
+- **The app took orders the website refused** — Mobile App 1.21.4. The coverage
+  gate was consulted only by `pokbon-checkout`, and the area requirement was
+  enforced only on the app's client. An older app build sends no
+  `delivery_zone` at all, and `validate_delivery_zone()` turns anything
+  unrecognised into `''`, which every caller reads as "price it the old way" —
+  so those orders took the flat regional rate while the rider was paid from the
+  matrix. Both are now enforced in `create_order()` and reported by
+  `validate_cart`. **`region_key_for()` matters:** the app sends the region's
+  NAME and the delivery plugin is asked by CODE, so matching raw would have
+  refused every honest order with the gate on. `wp-plugin/tests/delivery-coverage.test.php`
+  covers it, and is mostly about the ways it must NOT refuse.
+  **Rollout note: raise `minVersion` alongside this** or old installs stick at
+  Confirm Order.
+
 - **A vendor can be given a zone, and it overrides their dashboard** — Delivery
   0.5.26. Collection points demanded a pin, then a phone, then a zone the pin
   happened to fall inside, and refused the save if any were missing — so the
