@@ -300,6 +300,7 @@ export interface RiderJob {
     address: string;
     zoneCode: string | null;
     ghanaPost: string | null;
+    landmark: string | null;
     note: string | null;
     pinned: boolean;
     contactName: string;

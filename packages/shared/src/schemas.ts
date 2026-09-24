@@ -142,6 +142,17 @@ export const createJobSchema = z.object({
     address: z.string().max(300),
     zoneCode: z.string().max(40).optional(),
     ghanaPost: z.string().max(40).optional(),
+    /*
+     * The nearest thing a stranger can find.
+     *
+     * Asked for on its own rather than left inside the address, because in
+     * Ghana it is usually the most searchable part of a delivery: house
+     * numbers are sparse, street names are inconsistent, and "opposite Melcom,
+     * Sowutuom" gets a rider there when "Planet Close 44" does not. It is used
+     * for exactly that — it goes first in the maps search when an order has no
+     * pin — and it is shown to the rider as its own line.
+     */
+    landmark: z.string().max(160).optional(),
     note: z.string().max(500).optional(),
     /*
      * Are these coordinates the buyer's actual doorstep, or a stand-in?

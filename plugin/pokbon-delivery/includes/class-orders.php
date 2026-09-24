@@ -20,6 +20,19 @@ class Pokbon_Delivery_Orders {
 	const META_LAT        = '_pokbon_delivery_lat';
 	const META_LNG        = '_pokbon_delivery_lng';
 	const META_GHANAPOST  = '_pokbon_delivery_ghanapost';
+	/**
+	 * The nearest thing a stranger can find, in the buyer's own words.
+	 *
+	 * Its own field rather than another line of the address, because it is used
+	 * differently: the rider's app searches for it BEFORE the address when an
+	 * order has no map pin. In Ghana that is usually what gets somebody to the
+	 * door — house numbers are sparse and street names inconsistent, and
+	 * "opposite Melcom, Sowutuom" is a place a maps app knows.
+	 *
+	 * Written by both checkouts. Older orders have none, which is why every
+	 * reader treats it as optional.
+	 */
+	const META_LANDMARK   = '_pokbon_delivery_landmark';
 	const META_NOTE       = '_pokbon_delivery_note';
 	const META_JOB_IDS    = '_pokbon_delivery_job_ids';
 	/** What the zone matrix would have charged, beside what checkout did. */
@@ -1107,6 +1120,7 @@ customer who has paid should not be waiting on a retry — open POKBON Delivery
 			'address'      => self::rider_address( $order ),
 			'zoneCode'     => $zone,
 			'ghanaPost'    => (string) $order->get_meta( self::META_GHANAPOST ),
+			'landmark'     => self::landmark_for( $order ),
 			'note'         => $note,
 			// False means the coordinates above are the zone centre, not the
 			// buyer's door. The rider app navigates by address instead.
@@ -1114,6 +1128,30 @@ customer who has paid should not be waiting on a retry — open POKBON Delivery
 			'contactName'  => $name,
 			'contactPhone' => $phone,
 		];
+	}
+
+	/**
+	 * The buyer's landmark, from whichever checkout took the order.
+	 *
+	 * Both write the same meta. WooCommerce's own address line 2 is read as a
+	 * last resort because that box has been labelled "Apartment, suite,
+	 * landmark" on this marketplace for as long as it has existed, so every
+	 * order placed before the dedicated question has whatever the buyer put
+	 * there — and throwing that away to wait for new orders would be choosing
+	 * to know less than we already do.
+	 */
+	private static function landmark_for( $order ): string {
+		$landmark = trim( (string) $order->get_meta( self::META_LANDMARK ) );
+		if ( $landmark !== '' ) {
+			return sanitize_text_field( $landmark );
+		}
+
+		$line2 = trim( (string) $order->get_shipping_address_2() );
+		if ( $line2 === '' ) {
+			$line2 = trim( (string) $order->get_billing_address_2() );
+		}
+
+		return sanitize_text_field( $line2 );
 	}
 
 	/**

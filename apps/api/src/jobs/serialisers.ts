@@ -71,6 +71,8 @@ export function toRiderJobView(job: Job, extras: { photos?: JobPhoto[] } = {}) {
       address: job.dropoffAddress,
       zoneCode: job.dropoffZoneCode,
       ghanaPost: job.dropoffGhanaPost,
+      /** The most findable thing on a Ghanaian order. Searched before the address. */
+      landmark: job.dropoffLandmark,
       note: job.dropoffNote,
       /** False: lat/lng are a zone centre. Navigate by address, not by point. */
       pinned: job.dropoffPinned,

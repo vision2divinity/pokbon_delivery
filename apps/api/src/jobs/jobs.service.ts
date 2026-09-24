@@ -178,6 +178,7 @@ export class JobsService {
           dropoffAddress: input.dropoff.address,
           dropoffZoneCode: toZoneCode,
           dropoffGhanaPost: input.dropoff.ghanaPost ?? null,
+          dropoffLandmark: input.dropoff.landmark ?? null,
           dropoffNote: input.dropoff.note ?? null,
           dropoffPinned: input.dropoff.pinned,
           dropoffContactName: input.dropoff.contactName,

@@ -67,6 +67,7 @@ type Place = {
   lng: number;
   address: string;
   ghanaPost?: string | null;
+  landmark?: string | null;
   pinned?: boolean;
   contactName?: string | null;
 };
@@ -92,8 +93,13 @@ function navigationUrl(place: Place, useName = false): string {
     return `geo:${place.lat},${place.lng}?q=${place.lat},${place.lng}`;
   }
 
-  const ghanaPost = place.ghanaPost ?? '';
-  const query = [ghanaPost, useName ? place.contactName : '', place.address]
+  /*
+   * Order matters. GhanaPostGPS is exact when it is there; a landmark is the
+   * next most findable thing and usually beats the address outright, because
+   * "opposite Melcom, Sowutuom" is a place a maps app knows and "Planet Close
+   * 44" frequently is not.
+   */
+  const query = [place.ghanaPost, place.landmark, useName ? place.contactName : '', place.address]
     .map((p) => (p ?? '').trim())
     .filter(Boolean)
     .join(', ');
@@ -264,6 +270,10 @@ export default function JobScreen() {
    * and a rider reading "[No map pin on this order]" under "Note from the
    * customer" would reasonably conclude the customer is talking nonsense.
    */
+  const landmark = (job.dropoff.landmark ?? '').trim();
+  const showLandmark =
+    landmark !== '' && !job.dropoff.address.toLowerCase().includes(landmark.toLowerCase());
+
   const customerNote = (job.dropoff.note ?? '')
     .replace(/\[No map pin on this order[^\]]*\]/gi, '')
     .trim();
@@ -300,6 +310,14 @@ export default function JobScreen() {
           state as `pinned`. So it is shown as a warning, and the customer's
           own words are shown as theirs.
         */}
+        {/*
+          Not repeated when it is already sitting in the address line. Orders
+          placed before the landmark had its own question fall back to address
+          line 2, which this marketplace has always labelled "Apartment, suite,
+          landmark" — and that line is also part of the address. Showing the
+          same words twice under two headings reads as a broken screen.
+        */}
+        {showLandmark ? <Field label="Landmark" value={job.dropoff.landmark as string} /> : null}
         {customerNote ? <Field label="Note from the customer" value={customerNote} /> : null}
         {job.dropoff.pinned === false ? (
           <Notice tone="warning">

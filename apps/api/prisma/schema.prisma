@@ -270,6 +270,8 @@ model Job {
   dropoffAddress      String  @map("dropoff_address")
   dropoffZoneCode     String? @map("dropoff_zone_code")
   dropoffGhanaPost    String? @map("dropoff_ghana_post")
+  /// The nearest findable thing. Searched before the address when there is no pin.
+  dropoffLandmark     String? @map("dropoff_landmark")
   dropoffNote         String? @map("dropoff_note")
   /// False when dropoffLat/Lng are a zone centre rather than a real pin.
   dropoffPinned       Boolean @default(true) @map("dropoff_pinned")
